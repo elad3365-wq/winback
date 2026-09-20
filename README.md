@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WinBack
 
-## Getting Started
+WinBack helps local service businesses recover lost revenue from customers who
+received an estimate and never replied.
 
-First, run the development server:
+This repository contains **Phase 1** only: authentication, one business per
+user, and lead tracking. No SMS, AI, billing or third-party integrations yet.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Stack
+
+- Next.js 16 (App Router) + TypeScript
+- Tailwind CSS v4
+- Supabase (Postgres, Auth, Row Level Security)
+
+## Getting started
+
+1. **Create a Supabase project** at [supabase.com](https://supabase.com).
+
+2. **Run the migrations.** In the Supabase dashboard open the SQL Editor and run
+   the files in `supabase/migrations/` in order:
+
+   | File | What it does |
+   | --- | --- |
+   | `0001_schema.sql` | Creates `profiles`, `businesses`, `business_members`, `leads` and the `lead_status` enum |
+   | `0002_rls.sql` | Enables Row Level Security and adds the per-business policies |
+   | `0003_triggers.sql` | Gives every new signup a profile, a business and an owner membership |
+
+3. **Set environment variables.** Copy `.env.example` to `.env.local` and fill in
+   the values from Project Settings → API:
+
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://<your-ref>.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon / publishable key>
+   NEXT_PUBLIC_SITE_URL=http://localhost:3000
+   ```
+
+   The service role key is deliberately absent — it is never used by this app.
+
+4. **Run it.**
+
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+## Project layout
+
+```
+src/
+  app/
+    (auth)/            sign up, login, and the auth server actions
+    (app)/             authenticated shell, dashboard, leads
+    auth/confirm/      landing route for the signup confirmation email
+  components/
+    ui/                buttons, fields, cards, modal, badges
+    auth/              login and signup forms
+    leads/             leads table and the add/edit form
+  lib/
+    supabase/          browser, server and proxy Supabase clients
+    business.ts        resolves the signed-in user's business
+    leads.ts           lead statuses and the dashboard stat calculations
+supabase/migrations/   SQL to run against your Supabase project
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How the data is secured
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Every table has RLS enabled. Access to `leads` and `businesses` is granted
+through `business_members`, checked by the `is_business_member()` /
+`is_business_owner()` SECURITY DEFINER functions, so a user can only ever read
+or write rows belonging to their own business. The browser only ever receives
+the anon key, which carries no privileges of its own.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Dashboard metrics
 
-## Learn More
+| Metric | Definition |
+| --- | --- |
+| Total Leads | Every lead belonging to the business |
+| Active Follow-ups | Leads with status *Follow-up needed*, *Contacted* or *Interested* |
+| Recovered Customers | Leads with status *Recovered* |
+| Recovered Revenue | Sum of `estimate_amount` across leads with status *Recovered* |
 
-To learn more about Next.js, take a look at the following resources:
+## Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run dev     # start the dev server
+npm run build   # production build
+npm run lint    # eslint
+```
