@@ -49,6 +49,9 @@ begin
 
   if v_business_name is null then
     v_business_name := nullif(split_part(coalesce(new.email, ''), '@', 1), '');
+    if v_business_name is not null then
+      v_business_name := v_business_name || '''s business';
+    end if;
   end if;
 
   if v_business_name is null then
