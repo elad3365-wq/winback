@@ -28,6 +28,15 @@ export default async function LoginPage({
 
       <LoginForm next={typeof next === "string" ? next : undefined} />
 
+      <div className="mt-4 text-right">
+        <Link
+          href="/forgot-password"
+          className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+        >
+          Forgot password?
+        </Link>
+      </div>
+
       <p className="mt-6 text-center text-sm text-slate-500">
         No account yet?{" "}
         <Link href="/signup" className="font-medium text-indigo-600 hover:text-indigo-500">

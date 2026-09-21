@@ -63,12 +63,12 @@ export function SiteNav({ isAuthed = false }: { isAuthed?: boolean }) {
               >
                 Sign In
               </Link>
-              <a
-                href="#beta"
+              <Link
+                href="/signup"
                 className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
               >
-                Join Beta
-              </a>
+                Get Started
+              </Link>
             </>
           )}
         </div>
@@ -117,13 +117,13 @@ export function SiteNav({ isAuthed = false }: { isAuthed?: boolean }) {
                   >
                     Sign In
                   </Link>
-                  <a
-                    href="#beta"
+                  <Link
+                    href="/signup"
                     onClick={() => setOpen(false)}
                     className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500"
                   >
-                    Join Beta
-                  </a>
+                    Get Started
+                  </Link>
                 </>
               )}
             </div>

@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/leads", label: "Leads" },
+  { href: "/settings", label: "Settings" },
 ];
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {

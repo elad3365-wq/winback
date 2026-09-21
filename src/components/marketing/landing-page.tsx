@@ -51,13 +51,13 @@ function Hero() {
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a
-              href="#beta"
+            <Link
+              href="/signup"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500"
             >
-              Start Recovering Revenue
+              Get Started
               <ArrowRightIcon className="h-4 w-4" />
-            </a>
+            </Link>
             <a
               href="#how-it-works"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 transition-colors hover:bg-slate-50"

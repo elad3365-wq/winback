@@ -14,8 +14,17 @@ export const metadata = {
 };
 
 export default async function DashboardPage() {
-  const { business } = await requireBusinessContext();
+  const { user, business } = await requireBusinessContext();
   const supabase = await createClient();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const firstName =
+    profile?.full_name?.trim().split(/\s+/)[0] || user.email?.split("@")[0] || "there";
 
   const { data: leads, error } = await supabase
     .from("leads")
@@ -43,7 +52,8 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          <p className="text-sm font-medium text-indigo-600">Welcome, {firstName}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
             {business.name}
           </h1>
           <p className="mt-1 text-sm text-slate-500">

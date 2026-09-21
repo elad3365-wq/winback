@@ -77,3 +77,25 @@ export async function requireBusinessContext(): Promise<BusinessContext> {
 
   return { user, business: createdBusiness };
 }
+
+/**
+ * Like `requireBusinessContext`, but also sends owners who haven't finished
+ * onboarding to /onboarding. Used by the app shell so every dashboard page is
+ * gated behind a completed profile.
+ */
+export async function requireOnboardedContext(): Promise<BusinessContext> {
+  const context = await requireBusinessContext();
+  const supabase = await createClient();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("onboarding_completed")
+    .eq("id", context.user.id)
+    .maybeSingle();
+
+  if (!profile?.onboarding_completed) {
+    redirect("/onboarding");
+  }
+
+  return context;
+}

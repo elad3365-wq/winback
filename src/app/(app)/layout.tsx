@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/app-shell";
-import { requireBusinessContext } from "@/lib/business";
+import { requireOnboardedContext } from "@/lib/business";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const { user, business } = await requireBusinessContext();
+  const { user, business } = await requireOnboardedContext();
 
   return (
     <AppShell businessName={business.name} email={user.email ?? ""}>

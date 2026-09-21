@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
-import { signUpAction, type AuthFormState } from "@/app/(auth)/actions";
+import { updatePasswordAction, type AuthFormState } from "@/app/(auth)/actions";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
@@ -14,38 +14,22 @@ function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? "Creating account…" : "Create account"}
+      {pending ? "Updating…" : "Update password"}
     </Button>
   );
 }
 
-export function SignupForm() {
-  const [state, formAction] = useActionState(signUpAction, INITIAL_STATE);
+export function ResetPasswordForm() {
+  const [state, formAction] = useActionState(updatePasswordAction, INITIAL_STATE);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Instant, client-side feedback; the server action re-validates everything.
   const mismatch =
     confirmPassword.length > 0 && password.length > 0 && password !== confirmPassword;
 
   return (
     <form action={formAction} className="mt-6 space-y-4">
-      <Field label="Full name" htmlFor="fullName">
-        <Input id="fullName" name="fullName" autoComplete="name" required placeholder="Alex Rivera" />
-      </Field>
-
-      <Field label="Email" htmlFor="email">
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          placeholder="you@yourbusiness.com"
-        />
-      </Field>
-
-      <Field label="Password" htmlFor="password" hint="At least 8 characters.">
+      <Field label="New password" htmlFor="password" hint="At least 8 characters.">
         <Input
           id="password"
           name="password"
@@ -59,7 +43,7 @@ export function SignupForm() {
         />
       </Field>
 
-      <Field label="Confirm password" htmlFor="confirmPassword">
+      <Field label="Confirm new password" htmlFor="confirmPassword">
         <Input
           id="confirmPassword"
           name="confirmPassword"
@@ -76,7 +60,6 @@ export function SignupForm() {
 
       {mismatch ? <Alert tone="error">Passwords do not match.</Alert> : null}
       {state.error ? <Alert tone="error">{state.error}</Alert> : null}
-      {state.message ? <Alert tone="success">{state.message}</Alert> : null}
 
       <SubmitButton />
     </form>

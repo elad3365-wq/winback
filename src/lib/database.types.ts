@@ -21,6 +21,7 @@ export type Database = {
           id: string;
           email: string | null;
           full_name: string | null;
+          onboarding_completed: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -28,10 +29,12 @@ export type Database = {
           id: string;
           email?: string | null;
           full_name?: string | null;
+          onboarding_completed?: boolean;
         };
         Update: {
           email?: string | null;
           full_name?: string | null;
+          onboarding_completed?: boolean;
         };
         Relationships: [];
       };
@@ -40,6 +43,19 @@ export type Database = {
           id: string;
           name: string;
           owner_id: string;
+          business_type: string | null;
+          custom_business_type: string | null;
+          phone: string | null;
+          email: string | null;
+          website: string | null;
+          country: string | null;
+          state: string | null;
+          city: string | null;
+          monthly_estimates: number | null;
+          average_estimate_value: number | null;
+          currency: string;
+          employee_count: number | null;
+          current_follow_up_method: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -47,9 +63,66 @@ export type Database = {
           id?: string;
           name: string;
           owner_id: string;
+          business_type?: string | null;
+          custom_business_type?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          website?: string | null;
+          country?: string | null;
+          state?: string | null;
+          city?: string | null;
+          monthly_estimates?: number | null;
+          average_estimate_value?: number | null;
+          currency?: string;
+          employee_count?: number | null;
+          current_follow_up_method?: string | null;
         };
         Update: {
           name?: string;
+          business_type?: string | null;
+          custom_business_type?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          website?: string | null;
+          country?: string | null;
+          state?: string | null;
+          city?: string | null;
+          monthly_estimates?: number | null;
+          average_estimate_value?: number | null;
+          currency?: string;
+          employee_count?: number | null;
+          current_follow_up_method?: string | null;
+        };
+        Relationships: [];
+      };
+      business_ai_settings: {
+        Row: {
+          business_id: string;
+          financing_available: boolean;
+          payment_plans_available: boolean;
+          maximum_discount_percent: number;
+          ai_can_offer_discounts: boolean;
+          business_hours: string | null;
+          additional_rules: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          business_id: string;
+          financing_available?: boolean;
+          payment_plans_available?: boolean;
+          maximum_discount_percent?: number;
+          ai_can_offer_discounts?: boolean;
+          business_hours?: string | null;
+          additional_rules?: string | null;
+        };
+        Update: {
+          financing_available?: boolean;
+          payment_plans_available?: boolean;
+          maximum_discount_percent?: number;
+          ai_can_offer_discounts?: boolean;
+          business_hours?: string | null;
+          additional_rules?: string | null;
         };
         Relationships: [];
       };
@@ -153,3 +226,4 @@ export type Database = {
 export type Lead = Database["public"]["Tables"]["leads"]["Row"];
 export type Business = Database["public"]["Tables"]["businesses"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type BusinessAiSettings = Database["public"]["Tables"]["business_ai_settings"]["Row"];
