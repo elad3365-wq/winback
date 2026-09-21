@@ -72,6 +72,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      beta_signups: {
+        Row: {
+          id: string;
+          name: string;
+          business_name: string;
+          email: string;
+          business_type: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          business_name: string;
+          email: string;
+          business_type: string;
+        };
+        Update: {
+          name?: string;
+          business_name?: string;
+          email?: string;
+          business_type?: string;
+        };
+        Relationships: [];
+      };
       leads: {
         Row: {
           id: string;
