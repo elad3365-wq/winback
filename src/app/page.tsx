@@ -1,8 +1,16 @@
+import type { Metadata } from "next";
+
 import { LandingPage } from "@/components/marketing/landing-page";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "WinBack | Recover Lost Revenue From Existing Leads",
+  description:
+    "WinBack helps local service businesses track lost opportunities, follow up with customers, and recover more revenue from the leads and estimates they already have.",
+};
 
 /**
  * The public marketing homepage. Visitors are no longer redirected to /login —
