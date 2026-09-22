@@ -13,7 +13,7 @@ const INITIAL_STATE: AuthFormState = {};
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" className="w-full" disabled={pending}>
+    <Button type="submit" size="lg" className="w-full" disabled={pending}>
       {pending ? "Sending…" : "Send reset link"}
     </Button>
   );
@@ -23,13 +23,16 @@ export function ForgotPasswordForm() {
   const [state, formAction] = useActionState(requestPasswordResetAction, INITIAL_STATE);
 
   return (
-    <form action={formAction} className="mt-6 space-y-4">
+    <form action={formAction} className="space-y-4">
       <Field label="Email" htmlFor="email">
         <Input
           id="email"
           name="email"
           type="email"
+          inputSize="lg"
           autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
           required
           placeholder="you@yourbusiness.com"
         />

@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { signInAction, type AuthFormState } from "@/app/(auth)/actions";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
@@ -13,8 +14,8 @@ const INITIAL_STATE: AuthFormState = {};
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? "Signing in…" : "Sign in"}
+    <Button type="submit" size="lg" className="w-full" disabled={pending}>
+      {pending ? "Signing in…" : "Sign In"}
     </Button>
   );
 }
@@ -23,7 +24,7 @@ export function LoginForm({ next }: { next?: string }) {
   const [state, formAction] = useActionState(signInAction, INITIAL_STATE);
 
   return (
-    <form action={formAction} className="mt-6 space-y-4">
+    <form action={formAction} className="space-y-4">
       {next ? <input type="hidden" name="next" value={next} /> : null}
 
       <Field label="Email" htmlFor="email">
@@ -31,20 +32,22 @@ export function LoginForm({ next }: { next?: string }) {
           id="email"
           name="email"
           type="email"
+          inputSize="lg"
           autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
           required
           placeholder="you@yourbusiness.com"
         />
       </Field>
 
       <Field label="Password" htmlFor="password">
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="current-password"
           required
-          placeholder="••••••••"
+          placeholder="Your password"
         />
       </Field>
 

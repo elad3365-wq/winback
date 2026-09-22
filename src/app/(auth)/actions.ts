@@ -3,12 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { destinationAfterAuth, safeNext } from "@/lib/auth-destination";
+import { AUTH_MESSAGES, friendlyAuthError } from "@/lib/auth-errors";
 import { getSiteUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthFormState = {
   error?: string;
   message?: string;
+  /**
+   * Set when Supabase accepted the signup but withheld the session because
+   * "Confirm email" is on. The form swaps itself for a check-your-inbox panel.
+   */
+  confirmationEmail?: string;
 };
 
 function readString(formData: FormData, key: string) {
@@ -20,21 +27,6 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-/** Where a signed-in user belongs based on whether onboarding is finished. */
-async function destinationForUser(userId: string, fallbackNext: string) {
-  const supabase = await createClient();
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("onboarding_completed")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (!profile?.onboarding_completed) return "/onboarding";
-  // Only allow internal, non protocol-relative redirect targets.
-  const safeNext = fallbackNext.startsWith("/") && !fallbackNext.startsWith("//");
-  return safeNext ? fallbackNext : "/dashboard";
-}
-
 export async function signUpAction(
   _prevState: AuthFormState,
   formData: FormData,
@@ -42,7 +34,6 @@ export async function signUpAction(
   const fullName = readString(formData, "fullName");
   const email = readString(formData, "email");
   const password = String(formData.get("password") ?? "");
-  const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
   if (!fullName) {
     return { error: "Please enter your full name." };
@@ -52,9 +43,6 @@ export async function signUpAction(
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
-  }
-  if (password !== confirmPassword) {
-    return { error: "Passwords do not match." };
   }
 
   const supabase = await createClient();
@@ -68,18 +56,18 @@ export async function signUpAction(
   });
 
   if (error) {
-    return { error: error.message };
+    return { error: friendlyAuthError(error, AUTH_MESSAGES.signUp) };
   }
 
-  // When email confirmation is on, Supabase returns a user without a session.
-  if (!data.session) {
-    return {
-      message: `Account created. Check ${email} for a confirmation link, then sign in to continue.`,
-    };
+  // Email confirmation is off in Supabase, so signup already returns a session
+  // and the owner goes straight on to onboarding.
+  if (data.session) {
+    revalidatePath("/", "layout");
+    redirect("/onboarding");
   }
 
-  revalidatePath("/", "layout");
-  redirect("/onboarding");
+  // Email confirmation is on: Supabase returns a user but no session.
+  return { confirmationEmail: email };
 }
 
 export async function signInAction(
@@ -91,28 +79,52 @@ export async function signInAction(
   const next = readString(formData, "next");
 
   if (!email || !password) {
-    return { error: "Email and password are required." };
+    return { error: "Please enter your email and password." };
   }
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    return { error: error.message };
+    return { error: friendlyAuthError(error, AUTH_MESSAGES.signIn) };
   }
 
   revalidatePath("/", "layout");
   const destination = data.user
-    ? await destinationForUser(data.user.id, next)
+    ? await destinationAfterAuth(supabase, data.user.id, next)
     : "/dashboard";
   redirect(destination);
+}
+
+/**
+ * Starts the Google sign-in. Supabase hands back the provider URL instead of
+ * navigating (we are on the server), and stores the PKCE verifier in the same
+ * cookie jar that /auth/callback later reads it from.
+ */
+export async function signInWithGoogleAction(formData: FormData) {
+  const next = safeNext(readString(formData, "next") || null);
+
+  const callbackUrl = new URL("/auth/callback", await getSiteUrl());
+  if (next) callbackUrl.searchParams.set("next", next);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: callbackUrl.toString() },
+  });
+
+  if (error || !data?.url) {
+    redirect("/login?error=google");
+  }
+
+  redirect(data.url);
 }
 
 export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   revalidatePath("/", "layout");
-  redirect("/login");
+  redirect("/");
 }
 
 export async function requestPasswordResetAction(
@@ -131,12 +143,12 @@ export async function requestPasswordResetAction(
   });
 
   if (error) {
-    return { error: error.message };
+    return { error: friendlyAuthError(error, AUTH_MESSAGES.resetRequest) };
   }
 
   // Always report success so the form never reveals whether an email exists.
   return {
-    message: `If an account exists for ${email}, we've sent a link to reset your password.`,
+    message: `If an account exists for ${email}, we've sent a link to set a new password.`,
   };
 }
 
@@ -145,13 +157,9 @@ export async function updatePasswordAction(
   formData: FormData,
 ): Promise<AuthFormState> {
   const password = String(formData.get("password") ?? "");
-  const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
-  }
-  if (password !== confirmPassword) {
-    return { error: "Passwords do not match." };
   }
 
   const supabase = await createClient();
@@ -160,14 +168,17 @@ export async function updatePasswordAction(
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return { error: "Your reset link has expired. Request a new one." };
+    return { error: AUTH_MESSAGES.expiredLink };
   }
 
   const { error } = await supabase.auth.updateUser({ password });
   if (error) {
-    return { error: error.message };
+    return { error: friendlyAuthError(error, AUTH_MESSAGES.passwordUpdate) };
   }
 
+  // End the short-lived recovery session so the owner returns to a clean sign
+  // in and proves the new password works.
+  await supabase.auth.signOut();
   revalidatePath("/", "layout");
-  redirect(await destinationForUser(user.id, "/dashboard"));
+  redirect("/login?status=password_updated");
 }

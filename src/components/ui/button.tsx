@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
-type Size = "sm" | "md";
+type Size = "sm" | "md" | "lg";
 
 const VARIANTS: Record<Variant, string> = {
   primary: "bg-indigo-600 text-white hover:bg-indigo-500 focus-visible:outline-indigo-600",
@@ -17,6 +17,8 @@ const VARIANTS: Record<Variant, string> = {
 const SIZES: Record<Size, string> = {
   sm: "px-2.5 py-1.5 text-xs",
   md: "px-4 py-2 text-sm",
+  // Comfortably past the 44px minimum touch target, for the auth screens.
+  lg: "h-12 px-5 text-base",
 };
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {

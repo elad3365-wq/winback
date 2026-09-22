@@ -14,11 +14,15 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="rounded-xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
-      <h1 className="text-xl font-semibold tracking-tight text-slate-900">Set a new password</h1>
-      <p className="mt-1 text-sm text-slate-500">Choose a new password for your account.</p>
+    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8">
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Set a new password</h1>
+      <p className="mt-1 text-base text-slate-500">
+        Choose a new password, then sign in with it.
+      </p>
 
-      <ResetPasswordForm />
+      <div className="mt-6">
+        <ResetPasswordForm />
+      </div>
     </div>
   );
 }

@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
-import { signOutAction } from "@/app/(auth)/actions";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { UserMenu } from "@/components/user-menu";
 import { cn } from "@/lib/cn";
 
 const NAV_ITEMS = [
@@ -43,16 +43,6 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-function SignOutButton({ className }: { className?: string }) {
-  return (
-    <form action={signOutAction} className={className}>
-      <Button type="submit" variant="secondary" size="sm" className="w-full">
-        Sign out
-      </Button>
-    </form>
-  );
-}
-
 export function AppShell({
   businessName,
   email,
@@ -76,12 +66,8 @@ export function AppShell({
             <NavLinks />
           </div>
         </div>
-        <div className="space-y-3 border-t border-slate-200 pt-4">
-          <div className="px-2">
-            <p className="truncate text-sm font-medium text-slate-900">{businessName}</p>
-            <p className="truncate text-xs text-slate-500">{email}</p>
-          </div>
-          <SignOutButton />
+        <div className="border-t border-slate-200 pt-4">
+          <UserMenu businessName={businessName} email={email} />
         </div>
       </aside>
 
@@ -104,9 +90,7 @@ export function AppShell({
           <div id="mobile-nav" className="border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
             <NavLinks onNavigate={() => setMobileOpen(false)} />
             <div className="mt-3 border-t border-slate-200 pt-3">
-              <p className="truncate text-sm font-medium text-slate-900">{businessName}</p>
-              <p className="truncate text-xs text-slate-500">{email}</p>
-              <SignOutButton className="mt-3" />
+              <UserMenu businessName={businessName} email={email} />
             </div>
           </div>
         ) : null}
