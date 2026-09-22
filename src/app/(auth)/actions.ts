@@ -63,7 +63,7 @@ export async function signUpAction(
     password,
     options: {
       data: { full_name: fullName },
-      emailRedirectTo: `${getSiteUrl()}/auth/confirm?next=/onboarding`,
+      emailRedirectTo: `${await getSiteUrl()}/auth/confirm?next=/onboarding`,
     },
   });
 
@@ -127,7 +127,7 @@ export async function requestPasswordResetAction(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${getSiteUrl()}/auth/confirm?next=/reset-password`,
+    redirectTo: `${await getSiteUrl()}/auth/confirm?next=/reset-password`,
   });
 
   if (error) {

@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+
 /**
  * Reads the public Supabase configuration. Only the URL and the anon key are
  * read here — both are safe in the browser and protected by Row Level Security.
@@ -35,9 +37,52 @@ export function getSupabaseEnv() {
   return env;
 }
 
-export function getSiteUrl() {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-  );
+function stripTrailingSlash(url: string) {
+  return url.trim().replace(/\/+$/, "");
+}
+
+function isLocalhost(url: string) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(stripTrailingSlash(url));
+}
+
+/**
+ * The public address of this app, used to build the links Supabase emails for
+ * confirmation and password resets.
+ *
+ * On Vercel the platform tells us the real domain, so we use that and ignore
+ * NEXT_PUBLIC_SITE_URL entirely — a leftover `http://localhost:3000` from local
+ * development would otherwise send every emailed link to the recipient's own
+ * machine. Elsewhere we take the configured value, and failing that the host of
+ * the request being served, so a self-hosted deployment needs no configuration.
+ */
+export async function getSiteUrl() {
+  // Vercel, in order of preference: the project's stable production domain,
+  // then this specific deployment's domain. Both are set by the platform.
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  // An explicit setting, which is the normal case for local development.
+  const configured = process.env.NEXT_PUBLIC_SITE_URL;
+  if (configured && stripTrailingSlash(configured) !== "") {
+    return stripTrailingSlash(configured);
+  }
+
+  // Self-hosted with nothing configured: use the host we are being served on.
+  try {
+    const headerList = await headers();
+    const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
+    if (host) {
+      const forwardedProto = headerList.get("x-forwarded-proto");
+      const proto = forwardedProto ?? (isLocalhost(`http://${host}`) ? "http" : "https");
+      return `${proto}://${host}`;
+    }
+  } catch {
+    // Called outside a request, e.g. during the build. Fall through.
+  }
+
+  return "http://localhost:3000";
 }
