@@ -13,6 +13,7 @@ export const AUTH_MESSAGES = {
   signIn: "Email or password is incorrect.",
   signUp: "We couldn't create your account. Please try again.",
   google: "Google sign-in failed. Please try again.",
+  googleUnavailable: "Google sign-in isn't switched on yet. Use your email and password for now.",
   resetRequest: "We couldn't send the reset link. Please try again.",
   passwordUpdate: "We couldn't update your password. Please try again.",
   expiredLink: "That link has expired. Please request a new one.",
@@ -22,6 +23,18 @@ const NEEDS_CONFIRMATION =
   "Please confirm your email first. Open the link we sent you, then sign in.";
 const RATE_LIMITED = "Too many attempts. Please wait a minute and try again.";
 const OFFLINE = "We couldn't reach the server. Check your connection and try again.";
+
+/** Plain-language versions of the reasons a redirect can land back on a form. */
+const REDIRECT_ERRORS: Record<string, string> = {
+  google: AUTH_MESSAGES.google,
+  google_unavailable: AUTH_MESSAGES.googleUnavailable,
+  link: AUTH_MESSAGES.expiredLink,
+  confirmation_failed: AUTH_MESSAGES.expiredLink,
+};
+
+export function authErrorFromParam(param: string | undefined): string | undefined {
+  return param ? REDIRECT_ERRORS[param] : undefined;
+}
 
 /** Turns a Supabase auth error into a sentence a business owner can act on. */
 export function friendlyAuthError(error: AuthError | null, fallback: string): string {

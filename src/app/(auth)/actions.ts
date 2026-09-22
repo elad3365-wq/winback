@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { destinationAfterAuth, safeNext } from "@/lib/auth-destination";
 import { AUTH_MESSAGES, friendlyAuthError } from "@/lib/auth-errors";
 import { getSiteUrl } from "@/lib/env";
+import { isProviderEnabled } from "@/lib/supabase/providers";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthFormState = {
@@ -103,6 +104,14 @@ export async function signInAction(
  */
 export async function signInWithGoogleAction(formData: FormData) {
   const next = safeNext(readString(formData, "next") || null);
+  const from = readString(formData, "from") === "/signup" ? "/signup" : "/login";
+
+  // Checked before the flow starts, so a provider that is not switched on yet
+  // costs the owner one bounce back to the form rather than Supabase's raw
+  // JSON error page, and leaves no half-finished flow behind.
+  if (!(await isProviderEnabled("google"))) {
+    redirect(`${from}?error=google_unavailable`);
+  }
 
   const callbackUrl = new URL("/auth/callback", await getSiteUrl());
   if (next) callbackUrl.searchParams.set("next", next);
@@ -114,7 +123,7 @@ export async function signInWithGoogleAction(formData: FormData) {
   });
 
   if (error || !data?.url) {
-    redirect("/login?error=google");
+    redirect(`${from}?error=google`);
   }
 
   redirect(data.url);

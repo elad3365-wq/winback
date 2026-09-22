@@ -6,20 +6,13 @@ import { LoginForm } from "@/components/auth/login-form";
 import { SetupNotice } from "@/components/setup-notice";
 import { Alert } from "@/components/ui/alert";
 import { safeNext } from "@/lib/auth-destination";
-import { AUTH_MESSAGES } from "@/lib/auth-errors";
+import { authErrorFromParam } from "@/lib/auth-errors";
 import { isSupabaseConfigured } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Sign in · WinBack",
-};
-
-/** Plain-language versions of the reasons a redirect can land back here. */
-const ERROR_MESSAGES: Record<string, string> = {
-  google: AUTH_MESSAGES.google,
-  link: AUTH_MESSAGES.expiredLink,
-  confirmation_failed: AUTH_MESSAGES.expiredLink,
 };
 
 export default async function LoginPage({
@@ -33,7 +26,7 @@ export default async function LoginPage({
 
   const { next, error, status } = await searchParams;
   const target = safeNext(typeof next === "string" ? next : null) ?? undefined;
-  const errorMessage = typeof error === "string" ? ERROR_MESSAGES[error] : undefined;
+  const errorMessage = authErrorFromParam(typeof error === "string" ? error : undefined);
   const successMessage =
     status === "password_updated" ? "Password updated. Sign in with your new password." : undefined;
 
@@ -54,7 +47,7 @@ export default async function LoginPage({
       ) : null}
 
       <div className="mt-6">
-        <GoogleButton label="Continue with Google" next={target} />
+        <GoogleButton label="Continue with Google" next={target} from="/login" />
       </div>
 
       <AuthDivider label="or continue with email" />

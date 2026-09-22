@@ -4,6 +4,8 @@ import { AuthDivider } from "@/components/auth/auth-divider";
 import { GoogleButton } from "@/components/auth/google-button";
 import { SignupForm } from "@/components/auth/signup-form";
 import { SetupNotice } from "@/components/setup-notice";
+import { Alert } from "@/components/ui/alert";
+import { authErrorFromParam } from "@/lib/auth-errors";
 import { isSupabaseConfigured } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +14,17 @@ export const metadata = {
   title: "Create your account · WinBack",
 };
 
-export default function SignupPage() {
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   if (!isSupabaseConfigured()) {
     return <SetupNotice />;
   }
+
+  const { error } = await searchParams;
+  const errorMessage = authErrorFromParam(typeof error === "string" ? error : undefined);
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8">
@@ -24,8 +33,14 @@ export default function SignupPage() {
       </h1>
       <p className="mt-1 text-base text-slate-500">Start recovering the estimates nobody answered.</p>
 
+      {errorMessage ? (
+        <div className="mt-5">
+          <Alert tone="error">{errorMessage}</Alert>
+        </div>
+      ) : null}
+
       <div className="mt-6">
-        <GoogleButton label="Continue with Google" />
+        <GoogleButton label="Continue with Google" from="/signup" />
       </div>
 
       <AuthDivider label="or sign up with email" />

@@ -46,9 +46,19 @@ function Submit({ label }: { label: string }) {
  * Hands off to Supabase's Google OAuth. It is a plain form posting to a server
  * action, so it works before the page has finished hydrating.
  */
-export function GoogleButton({ label, next }: { label: string; next?: string }) {
+export function GoogleButton({
+  label,
+  next,
+  from,
+}: {
+  label: string;
+  next?: string;
+  /** Where to show a problem, so a press on /signup never answers on /login. */
+  from: "/login" | "/signup";
+}) {
   return (
     <form action={signInWithGoogleAction}>
+      <input type="hidden" name="from" value={from} />
       {next ? <input type="hidden" name="next" value={next} /> : null}
       <Submit label={label} />
     </form>
