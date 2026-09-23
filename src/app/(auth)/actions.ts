@@ -101,10 +101,15 @@ export async function signInAction(
  * Starts the Google sign-in. Supabase hands back the provider URL instead of
  * navigating (we are on the server), and stores the PKCE verifier in the same
  * cookie jar that /auth/callback later reads it from.
+ *
+ * The form sends the browser's own `window.location.origin`, so the callback
+ * handed to Supabase is the address this visitor is really on. See getSiteUrl
+ * for what happens when the field is empty or names another host.
  */
 export async function signInWithGoogleAction(formData: FormData) {
   const next = safeNext(readString(formData, "next") || null);
   const from = readString(formData, "from") === "/signup" ? "/signup" : "/login";
+  const browserOrigin = readString(formData, "origin");
 
   // Checked before the flow starts, so a provider that is not fully set up yet
   // costs the owner one bounce back to the form rather than Supabase's raw
@@ -113,7 +118,7 @@ export async function signInWithGoogleAction(formData: FormData) {
     redirect(`${from}?error=google_unavailable`);
   }
 
-  const callbackUrl = new URL("/auth/callback", await getSiteUrl());
+  const callbackUrl = new URL("/auth/callback", await getSiteUrl(browserOrigin));
   if (next) callbackUrl.searchParams.set("next", next);
 
   const supabase = await createClient();
@@ -123,7 +128,17 @@ export async function signInWithGoogleAction(formData: FormData) {
   });
 
   if (error || !data?.url) {
-    redirect(`${from}?error=google`);
+    // Supabase's own words, kept in the server log. The owner only ever sees
+    // the sentence the redirect below resolves to.
+    console.error("[auth] could not start Google sign-in", {
+      redirectTo: callbackUrl.toString(),
+      name: error?.name,
+      code: error?.code,
+      status: error?.status,
+      message: error?.message,
+      hadUrl: Boolean(data?.url),
+    });
+    redirect(`${from}?error=google_start`);
   }
 
   redirect(data.url);

@@ -24,10 +24,31 @@ const NEEDS_CONFIRMATION =
 const RATE_LIMITED = "Too many attempts. Please wait a minute and try again.";
 const OFFLINE = "We couldn't reach the server. Check your connection and try again.";
 
-/** Plain-language versions of the reasons a redirect can land back on a form. */
+/**
+ * Plain-language versions of the reasons a redirect can land back on a form.
+ *
+ * The Google entries are deliberately all different. /auth/callback logs the
+ * real Supabase error on the server and picks the code that matches the step
+ * that broke, so the sentence on screen — or a screenshot of it — is enough to
+ * tell which step that was without anyone reading a log.
+ */
 const REDIRECT_ERRORS: Record<string, string> = {
   google: AUTH_MESSAGES.google,
   google_unavailable: AUTH_MESSAGES.googleUnavailable,
+  // Supabase would not even hand us a Google URL to send the owner to.
+  google_start: AUTH_MESSAGES.google,
+  // Supabase refused before issuing a code.
+  google_cancelled: "Google sign-in was cancelled. Please try again.",
+  // The provider succeeded but Supabase could not save the account.
+  google_account:
+    "We couldn't finish setting up your account. Please try again, and tell us if it keeps happening.",
+  // Came back with neither a code nor an error, so the attempt went stale.
+  google_expired: "That sign-in attempt expired. Please press Continue with Google again.",
+  // The code arrived without the browser cookie that proves it belongs here.
+  google_session:
+    "Your browser didn't keep the sign-in open. Please try again in the same tab, without private mode.",
+  // Supabase rejected the code itself.
+  google_exchange: "Google signed you in, but we couldn't complete it. Please try again.",
   link: AUTH_MESSAGES.expiredLink,
   confirmation_failed: AUTH_MESSAGES.expiredLink,
 };

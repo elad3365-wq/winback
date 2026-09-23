@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 
 import { signInWithGoogleAction } from "@/app/(auth)/actions";
@@ -43,8 +44,27 @@ function Submit({ label }: { label: string }) {
 }
 
 /**
+ * Tells the server the origin this page is open on, so the callback Supabase is
+ * given is the address the visitor is actually using. It is filled in after
+ * mount, which keeps the button working before hydration: the field is then
+ * empty and the server falls back to the host the request arrived on.
+ */
+function BrowserOrigin() {
+  const field = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (field.current) field.current.value = window.location.origin;
+  }, []);
+
+  return <input ref={field} type="hidden" name="origin" defaultValue="" />;
+}
+
+/**
  * Hands off to Supabase's Google OAuth. It is a plain form posting to a server
  * action, so it works before the page has finished hydrating.
+ *
+ * The exchange has to happen on the server: Supabase writes the PKCE verifier
+ * into a cookie here, and /auth/callback reads it back out of the same jar.
  */
 export function GoogleButton({
   label,
@@ -59,6 +79,7 @@ export function GoogleButton({
   return (
     <form action={signInWithGoogleAction}>
       <input type="hidden" name="from" value={from} />
+      <BrowserOrigin />
       {next ? <input type="hidden" name="next" value={next} /> : null}
       <Submit label={label} />
     </form>
