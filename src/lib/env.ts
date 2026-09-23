@@ -45,15 +45,37 @@ function isLocalhost(url: string) {
   return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(stripTrailingSlash(url));
 }
 
+/** The origin this request actually arrived on, or null outside a request. */
+async function siteUrlFromRequest(): Promise<string | null> {
+  try {
+    const headerList = await headers();
+    const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
+    if (!host) return null;
+
+    // Proxies chain this header, so the first entry is the original scheme.
+    const forwardedProto = headerList.get("x-forwarded-proto")?.split(",")[0]?.trim();
+    const proto = forwardedProto || (isLocalhost(`http://${host}`) ? "http" : "https");
+    return `${proto}://${host}`;
+  } catch {
+    // Called outside a request, e.g. during the build.
+    return null;
+  }
+}
+
 /**
- * The public address of this app, used to build the links Supabase emails for
+ * The address of this app that a visitor's browser can actually reach. Used to
+ * build the Google OAuth callback and the links Supabase emails for
  * confirmation and password resets.
  *
- * On Vercel the platform tells us the real domain, so we use that and ignore
- * NEXT_PUBLIC_SITE_URL entirely — a leftover `http://localhost:3000` from local
- * development would otherwise send every emailed link to the recipient's own
- * machine. Elsewhere we take the configured value, and failing that the host of
- * the request being served, so a self-hosted deployment needs no configuration.
+ * On Vercel the platform tells us the real domain, so we use that. Otherwise we
+ * take the configured value, and failing that the host of the request being
+ * served, so a self-hosted deployment needs no configuration.
+ *
+ * `http://localhost:3000` is the value that ships in .env.example, so it is the
+ * one most likely to be copied into a hosted environment by mistake. It is
+ * therefore never allowed to win over the host a public request arrived on: a
+ * redirect built from it would strand every visitor on their own machine, which
+ * is exactly the dead end an OAuth round trip lands in.
  */
 export async function getSiteUrl() {
   // Vercel, in order of preference: the project's stable production domain,
@@ -65,24 +87,16 @@ export async function getSiteUrl() {
     return `https://${process.env.VERCEL_URL}`;
   }
 
+  const fromRequest = await siteUrlFromRequest();
+
   // An explicit setting, which is the normal case for local development.
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured && stripTrailingSlash(configured) !== "") {
-    return stripTrailingSlash(configured);
+  const configured = stripTrailingSlash(process.env.NEXT_PUBLIC_SITE_URL ?? "");
+  if (configured !== "") {
+    const wouldStrandVisitor =
+      isLocalhost(configured) && fromRequest !== null && !isLocalhost(fromRequest);
+    if (!wouldStrandVisitor) return configured;
   }
 
-  // Self-hosted with nothing configured: use the host we are being served on.
-  try {
-    const headerList = await headers();
-    const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
-    if (host) {
-      const forwardedProto = headerList.get("x-forwarded-proto");
-      const proto = forwardedProto ?? (isLocalhost(`http://${host}`) ? "http" : "https");
-      return `${proto}://${host}`;
-    }
-  } catch {
-    // Called outside a request, e.g. during the build. Fall through.
-  }
-
-  return "http://localhost:3000";
+  // Self-hosted with nothing usable configured: use the host we are served on.
+  return fromRequest ?? "http://localhost:3000";
 }
