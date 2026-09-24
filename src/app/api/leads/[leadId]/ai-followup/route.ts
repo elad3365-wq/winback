@@ -119,6 +119,7 @@ export async function POST(
     businessHours: settings?.business_hours ?? null,
     additionalRules: settings?.additional_rules ?? null,
     channel,
+    tone: settings?.tone ?? "professional",
   };
 
   let generatedText: string;
@@ -156,8 +157,9 @@ export async function POST(
       lead_id: lead.id,
       channel,
       status: "draft",
-      content,
-      model,
+      source: "manual",
+      message: content,
+      ai_model: model,
       prompt_inputs: { ...inputs, prompt: buildFollowupPrompt(inputs) },
       discount_offered: discountOffered,
       created_by: user.id,
@@ -173,7 +175,7 @@ export async function POST(
   return json(
     {
       id: saved.id,
-      content,
+      message: content,
       channel,
       discountOffered,
       createdAt: saved.created_at,

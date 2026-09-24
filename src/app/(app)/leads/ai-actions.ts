@@ -1,31 +1,28 @@
 "use server";
 
 import { requireBusinessContext } from "@/lib/business";
+import type { AiMessageStatus } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
 
 /**
  * Server actions for the AI follow-up approval workflow: draft -> approved ->
- * sent. Sending is not implemented yet, so nothing here sends — the furthest a
- * message goes is "approved". Every action is scoped to the caller's business
- * both by RLS and by an explicit business_id filter, and only moves a message
- * between allowed states.
+ * sent. Sending is not implemented, so the furthest a message goes here is
+ * "approved". Every action is scoped to the caller's business by RLS and by an
+ * explicit business_id filter, and only moves a message between allowed states.
  */
 
 export type AiMessageActionResult = {
   error?: string;
-  status?: "draft" | "edited" | "approved" | "sent" | "discarded";
+  status?: AiMessageStatus;
   approvedAt?: string | null;
 };
 
-/**
- * Persist a human edit to a draft. Allowed only while the message is still a
- * draft/edited — once approved it is locked.
- */
+/** Persist a human edit to a draft. Allowed only while still a draft. */
 export async function saveAiMessageEditAction(
   messageId: string,
-  content: string,
+  message: string,
 ): Promise<AiMessageActionResult> {
-  const trimmed = content.trim();
+  const trimmed = message.trim();
   if (!messageId) return { error: "Missing message id." };
   if (!trimmed) return { error: "The message can't be empty." };
   if (trimmed.length > 4000) return { error: "That message is too long." };
@@ -35,7 +32,7 @@ export async function saveAiMessageEditAction(
 
   const { data, error } = await supabase
     .from("ai_messages")
-    .update({ content: trimmed, status: "edited" })
+    .update({ message: trimmed })
     .eq("id", messageId)
     .eq("business_id", business.id)
     .in("status", ["draft", "edited"])
@@ -76,13 +73,17 @@ export async function approveAiMessageAction(
   if (error) return { error: error.message };
   if (!data) return { error: "This message can no longer be approved." };
 
+  await supabase.from("ai_audit_log").insert({
+    business_id: business.id,
+    ai_message_id: messageId,
+    event: "message_approved",
+    detail: { approved_by: user.id },
+  });
+
   return { status: data.status, approvedAt: data.approved_at };
 }
 
-/**
- * Reopen an approved message for further editing (back to draft). Lets an owner
- * undo an approval before anything is sent. Clears the approval audit fields.
- */
+/** Reopen an approved message for editing (back to draft). Clears the approval audit. */
 export async function reopenAiMessageAction(
   messageId: string,
 ): Promise<AiMessageActionResult> {
@@ -102,6 +103,30 @@ export async function reopenAiMessageAction(
 
   if (error) return { error: error.message };
   if (!data) return { error: "This message can no longer be reopened." };
+
+  return { status: data.status };
+}
+
+/** Cancel a draft or approved message so it is never used. */
+export async function cancelAiMessageAction(
+  messageId: string,
+): Promise<AiMessageActionResult> {
+  if (!messageId) return { error: "Missing message id." };
+
+  const { business } = await requireBusinessContext();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("ai_messages")
+    .update({ status: "cancelled" })
+    .eq("id", messageId)
+    .eq("business_id", business.id)
+    .in("status", ["draft", "edited", "approved"])
+    .select("id, status")
+    .maybeSingle();
+
+  if (error) return { error: error.message };
+  if (!data) return { error: "This message can no longer be cancelled." };
 
   return { status: data.status };
 }

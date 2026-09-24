@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireBusinessContext } from "@/lib/business";
 import type { LeadStatus } from "@/lib/database.types";
-import { isLeadStatus } from "@/lib/leads";
+import { AUTOPILOT_STOP_STATUSES, isLeadStatus } from "@/lib/leads";
 import { createClient } from "@/lib/supabase/server";
 
 export type LeadFormState = {
@@ -79,9 +79,29 @@ export async function createLeadAction(
   const { user, business } = await requireBusinessContext();
   const supabase = await createClient();
 
-  const { error } = await supabase
-    .from("leads")
-    .insert({ ...parsed, business_id: business.id, created_by: user.id });
+  // If autopilot is on and the lead is in a follow-up-able state, schedule the
+  // first follow-up. The scheduler (a draft-only cron) picks it up when due.
+  const { data: settings } = await supabase
+    .from("business_ai_settings")
+    .select("autopilot_enabled, first_followup_delay_minutes")
+    .eq("business_id", business.id)
+    .maybeSingle();
+
+  const eligible =
+    !AUTOPILOT_STOP_STATUSES.includes(parsed.status) && parsed.status !== "cold";
+  const nextFollowUpAt =
+    settings?.autopilot_enabled && eligible
+      ? new Date(
+          Date.now() + (settings.first_followup_delay_minutes ?? 60) * 60_000,
+        ).toISOString()
+      : null;
+
+  const { error } = await supabase.from("leads").insert({
+    ...parsed,
+    business_id: business.id,
+    created_by: user.id,
+    next_follow_up_at: nextFollowUpAt,
+  });
 
   if (error) {
     return { status: "error", error: error.message };

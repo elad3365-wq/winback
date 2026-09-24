@@ -13,11 +13,11 @@ import { Field, Select, Textarea } from "@/components/ui/field";
 import type { Lead } from "@/lib/database.types";
 
 type Channel = "sms" | "email";
-type Status = "draft" | "edited" | "approved";
+type Status = "draft" | "approved";
 
 type GenerateResponse = {
   id: string;
-  content: string;
+  message: string;
   channel: Channel;
   discountOffered: boolean;
   createdAt: string;
@@ -68,8 +68,8 @@ export function AiFollowup({ lead }: { lead: Lead }) {
         return;
       }
       setDraftId(data.id ?? null);
-      setContent(data.content ?? "");
-      setSavedContent(data.content ?? "");
+      setContent(data.message ?? "");
+      setSavedContent(data.message ?? "");
       setStatus("draft");
       setApprovedAt(null);
     } catch {
@@ -90,7 +90,7 @@ export function AiFollowup({ lead }: { lead: Lead }) {
         return false;
       }
       setSavedContent(content.trim());
-      setStatus(result.status === "approved" ? "approved" : "edited");
+      setStatus(result.status === "approved" ? "approved" : "draft");
       return true;
     } finally {
       setSaving(false);
@@ -253,12 +253,10 @@ export function AiFollowup({ lead }: { lead: Lead }) {
 function StatusPill({ status }: { status: Status }) {
   const styles: Record<Status, string> = {
     draft: "bg-slate-100 text-slate-700 ring-slate-200",
-    edited: "bg-amber-50 text-amber-700 ring-amber-200",
     approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   };
   const labels: Record<Status, string> = {
     draft: "Draft",
-    edited: "Edited draft",
     approved: "Approved",
   };
   return (

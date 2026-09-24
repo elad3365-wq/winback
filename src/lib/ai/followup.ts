@@ -1,4 +1,4 @@
-import type { LeadStatus } from "@/lib/database.types";
+import type { AiTone, LeadStatus } from "@/lib/database.types";
 import { LEAD_STATUS_LABELS } from "@/lib/leads";
 
 /**
@@ -22,6 +22,14 @@ export type FollowupInputs = {
   businessHours: string | null;
   additionalRules: string | null;
   channel: "sms" | "email";
+  tone: AiTone;
+};
+
+const TONE_INSTRUCTIONS: Record<AiTone, string> = {
+  professional: "Tone: professional and polished, respectful and competent.",
+  friendly: "Tone: warm, friendly and conversational, like a helpful local business.",
+  direct: "Tone: direct and concise — get to the point, no filler.",
+  premium: "Tone: premium and refined, confident and high-end without being stuffy.",
 };
 
 /**
@@ -73,12 +81,16 @@ export function buildFollowupPrompt(inputs: FollowupInputs): {
     "",
     "Hard rules — never break these:",
     "- Use ONLY the facts provided in the customer/business details. Never invent prices, guarantees, timelines, availability, offers, or facts that are not given.",
+    "- Never promise anything that is not explicitly present in the business details.",
+    "- If any detail is uncertain, missing, or the customer would need specifics you don't have, do NOT guess — say a team member will confirm the details.",
     `- ${discountRule}`,
     `- ${financingRule}`,
     `- ${paymentPlanRule}`,
     "- Respect the business's additional rules and business hours if provided.",
     "- No placeholders or brackets like [Name] or [Company]; use the real names given.",
     "- This is a DRAFT for the business owner to review. Do not claim anything has been scheduled, booked, or confirmed.",
+    "",
+    TONE_INSTRUCTIONS[inputs.tone],
     "",
     "Style:",
     inputs.channel === "email"

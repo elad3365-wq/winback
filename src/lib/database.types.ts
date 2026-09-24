@@ -9,7 +9,28 @@ export type LeadStatus =
   | "contacted"
   | "interested"
   | "recovered"
-  | "lost";
+  | "lost"
+  // Autopilot follow-up progression.
+  | "followup_1"
+  | "followup_2"
+  | "followup_3"
+  | "cold"
+  // Interrupt states.
+  | "call_requested"
+  | "paused"
+  | "unsubscribed";
+
+export type AiMessageStatus =
+  | "draft"
+  | "edited"
+  | "approved"
+  | "sent"
+  | "cancelled"
+  | "discarded";
+
+export type AutopilotMode = "manual" | "assisted" | "full";
+export type AiTone = "professional" | "friendly" | "direct" | "premium";
+export type UnsubscribeStatus = "subscribed" | "unsubscribed";
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -104,6 +125,15 @@ export type Database = {
           ai_can_offer_discounts: boolean;
           business_hours: string | null;
           additional_rules: string | null;
+          autopilot_enabled: boolean;
+          autopilot_mode: AutopilotMode;
+          first_followup_delay_minutes: number;
+          second_followup_delay_minutes: number;
+          third_followup_delay_minutes: number;
+          maximum_followups: number;
+          approval_required_for_discounts: boolean;
+          approval_required_for_custom_answers: boolean;
+          tone: AiTone;
           created_at: string;
           updated_at: string;
         };
@@ -115,6 +145,15 @@ export type Database = {
           ai_can_offer_discounts?: boolean;
           business_hours?: string | null;
           additional_rules?: string | null;
+          autopilot_enabled?: boolean;
+          autopilot_mode?: AutopilotMode;
+          first_followup_delay_minutes?: number;
+          second_followup_delay_minutes?: number;
+          third_followup_delay_minutes?: number;
+          maximum_followups?: number;
+          approval_required_for_discounts?: boolean;
+          approval_required_for_custom_answers?: boolean;
+          tone?: AiTone;
         };
         Update: {
           financing_available?: boolean;
@@ -123,6 +162,15 @@ export type Database = {
           ai_can_offer_discounts?: boolean;
           business_hours?: string | null;
           additional_rules?: string | null;
+          autopilot_enabled?: boolean;
+          autopilot_mode?: AutopilotMode;
+          first_followup_delay_minutes?: number;
+          second_followup_delay_minutes?: number;
+          third_followup_delay_minutes?: number;
+          maximum_followups?: number;
+          approval_required_for_discounts?: boolean;
+          approval_required_for_custom_answers?: boolean;
+          tone?: AiTone;
         };
         Relationships: [];
       };
@@ -175,9 +223,11 @@ export type Database = {
           business_id: string;
           lead_id: string;
           channel: "sms" | "email";
-          status: "draft" | "edited" | "approved" | "sent" | "discarded";
-          content: string;
-          model: string | null;
+          status: AiMessageStatus;
+          message: string;
+          ai_model: string | null;
+          source: "manual" | "autopilot";
+          followup_number: number | null;
           prompt_inputs: Json | null;
           discount_offered: boolean;
           created_by: string | null;
@@ -192,21 +242,46 @@ export type Database = {
           business_id: string;
           lead_id: string;
           channel?: "sms" | "email";
-          status?: "draft" | "edited" | "approved" | "sent" | "discarded";
-          content: string;
-          model?: string | null;
+          status?: AiMessageStatus;
+          message: string;
+          ai_model?: string | null;
+          source?: "manual" | "autopilot";
+          followup_number?: number | null;
           prompt_inputs?: Json | null;
           discount_offered?: boolean;
           created_by?: string | null;
         };
         Update: {
           channel?: "sms" | "email";
-          status?: "draft" | "edited" | "approved" | "sent" | "discarded";
-          content?: string;
+          status?: AiMessageStatus;
+          message?: string;
           discount_offered?: boolean;
           approved_at?: string | null;
           approved_by?: string | null;
           sent_at?: string | null;
+        };
+        Relationships: [];
+      };
+      ai_audit_log: {
+        Row: {
+          id: string;
+          business_id: string;
+          lead_id: string | null;
+          ai_message_id: string | null;
+          event: string;
+          detail: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          lead_id?: string | null;
+          ai_message_id?: string | null;
+          event: string;
+          detail?: Json | null;
+        };
+        Update: {
+          detail?: Json | null;
         };
         Relationships: [];
       };
@@ -220,6 +295,11 @@ export type Database = {
           estimate_amount: number;
           status: LeadStatus;
           follow_up_date: string | null;
+          next_follow_up_at: string | null;
+          follow_up_count: number;
+          last_follow_up_at: string | null;
+          autopilot_paused: boolean;
+          unsubscribe_status: UnsubscribeStatus;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -233,6 +313,11 @@ export type Database = {
           estimate_amount?: number;
           status?: LeadStatus;
           follow_up_date?: string | null;
+          next_follow_up_at?: string | null;
+          follow_up_count?: number;
+          last_follow_up_at?: string | null;
+          autopilot_paused?: boolean;
+          unsubscribe_status?: UnsubscribeStatus;
           created_by?: string | null;
         };
         Update: {
@@ -242,6 +327,11 @@ export type Database = {
           estimate_amount?: number;
           status?: LeadStatus;
           follow_up_date?: string | null;
+          next_follow_up_at?: string | null;
+          follow_up_count?: number;
+          last_follow_up_at?: string | null;
+          autopilot_paused?: boolean;
+          unsubscribe_status?: UnsubscribeStatus;
         };
         Relationships: [];
       };
@@ -269,3 +359,4 @@ export type Business = Database["public"]["Tables"]["businesses"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type BusinessAiSettings = Database["public"]["Tables"]["business_ai_settings"]["Row"];
 export type AiMessage = Database["public"]["Tables"]["ai_messages"]["Row"];
+export type AiAuditLog = Database["public"]["Tables"]["ai_audit_log"]["Row"];
