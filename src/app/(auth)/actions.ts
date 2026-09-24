@@ -6,7 +6,6 @@ import { redirect } from "next/navigation";
 import { destinationAfterAuth, safeNext } from "@/lib/auth-destination";
 import { AUTH_MESSAGES, friendlyAuthError } from "@/lib/auth-errors";
 import { getSiteUrl } from "@/lib/env";
-import { isProviderAvailable } from "@/lib/supabase/providers";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthFormState = {
@@ -111,13 +110,15 @@ export async function signInWithGoogleAction(formData: FormData) {
   const from = readString(formData, "from") === "/signup" ? "/signup" : "/login";
   const browserOrigin = readString(formData, "origin");
 
-  // Checked before the flow starts, so a provider that is not fully set up yet
-  // costs the owner one bounce back to the form rather than Supabase's raw
-  // JSON error page, and leaves no half-finished flow behind.
-  if (!(await isProviderAvailable("google"))) {
-    redirect(`${from}?error=google_unavailable`);
-  }
-
+  // signInWithOAuth below is the ONLY thing that may touch the authorize
+  // endpoint. An earlier version probed /auth/v1/authorize first to check the
+  // provider was configured, but that bare probe opened a second, PKCE-less
+  // authorize flow on Supabase for the same sign-in: the code Google returned
+  // could bind to that stray flow instead of the real one, so the verifier in
+  // the cookie no longer matched its challenge and the exchange failed with
+  // "bad_code_verifier". A provider that is not fully set up is now caught from
+  // signInWithOAuth's own error just below, so the friendly message survives
+  // without a duplicate authorize corrupting the PKCE flow.
   const callbackUrl = new URL("/auth/callback", await getSiteUrl(browserOrigin));
   if (next) callbackUrl.searchParams.set("next", next);
 
@@ -138,7 +139,13 @@ export async function signInWithGoogleAction(formData: FormData) {
       message: error?.message,
       hadUrl: Boolean(data?.url),
     });
-    redirect(`${from}?error=google_start`);
+    // A provider that is enabled without a secret, or not enabled at all, says
+    // so in the error. Show the "not available" message for those; everything
+    // else is a generic could-not-start.
+    const notConfigured = /provider is not enabled|oauth secret|unsupported provider/i.test(
+      error?.message ?? "",
+    );
+    redirect(`${from}?error=${notConfigured ? "google_unavailable" : "google_start"}`);
   }
 
   redirect(data.url);
