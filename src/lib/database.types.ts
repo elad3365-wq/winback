@@ -181,6 +181,9 @@ export type Database = {
           prompt_inputs: Json | null;
           discount_offered: boolean;
           created_by: string | null;
+          approved_at: string | null;
+          approved_by: string | null;
+          sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -201,6 +204,9 @@ export type Database = {
           status?: "draft" | "edited" | "approved" | "sent" | "discarded";
           content?: string;
           discount_offered?: boolean;
+          approved_at?: string | null;
+          approved_by?: string | null;
+          sent_at?: string | null;
         };
         Relationships: [];
       };
