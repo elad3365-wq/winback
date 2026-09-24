@@ -17,6 +17,25 @@ function isPublicPath(pathname: string) {
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  // OAuth safety net. When the /auth/callback address is missing from the
+  // project's Supabase "Redirect URLs" allow-list, Supabase discards the
+  // redirectTo we sent and falls back to the Site URL, so the browser lands on
+  // some other path (usually "/") still carrying the single-use PKCE `?code=`.
+  // Forward that straight to the real handler so the session is still
+  // established instead of the code stranding on a page that cannot read it.
+  // (The proper fix is to allow-list /auth/callback in Supabase, which also
+  // preserves the `next` param; this keeps sign-in working until then.)
+  const incoming = request.nextUrl;
+  if (
+    incoming.searchParams.has("code") &&
+    incoming.pathname !== "/auth/callback" &&
+    !incoming.pathname.startsWith("/auth/")
+  ) {
+    const callbackUrl = incoming.clone();
+    callbackUrl.pathname = "/auth/callback";
+    return NextResponse.redirect(callbackUrl);
+  }
+
   // Without credentials there is no session to refresh. Send app pages to
   // /login, which renders the setup screen instead of throwing.
   if (!isSupabaseConfigured()) {
