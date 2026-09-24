@@ -169,6 +169,41 @@ export type Database = {
         };
         Relationships: [];
       };
+      ai_messages: {
+        Row: {
+          id: string;
+          business_id: string;
+          lead_id: string;
+          channel: "sms" | "email";
+          status: "draft" | "edited" | "approved" | "sent" | "discarded";
+          content: string;
+          model: string | null;
+          prompt_inputs: Json | null;
+          discount_offered: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          lead_id: string;
+          channel?: "sms" | "email";
+          status?: "draft" | "edited" | "approved" | "sent" | "discarded";
+          content: string;
+          model?: string | null;
+          prompt_inputs?: Json | null;
+          discount_offered?: boolean;
+          created_by?: string | null;
+        };
+        Update: {
+          channel?: "sms" | "email";
+          status?: "draft" | "edited" | "approved" | "sent" | "discarded";
+          content?: string;
+          discount_offered?: boolean;
+        };
+        Relationships: [];
+      };
       leads: {
         Row: {
           id: string;
@@ -227,3 +262,4 @@ export type Lead = Database["public"]["Tables"]["leads"]["Row"];
 export type Business = Database["public"]["Tables"]["businesses"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type BusinessAiSettings = Database["public"]["Tables"]["business_ai_settings"]["Row"];
+export type AiMessage = Database["public"]["Tables"]["ai_messages"]["Row"];

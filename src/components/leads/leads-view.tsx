@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 
 import { deleteLeadAction, updateLeadStatusAction } from "@/app/(app)/leads/actions";
+import { AiFollowup } from "@/components/leads/ai-followup";
 import { LeadForm } from "@/components/leads/lead-form";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,11 @@ import type { Lead, LeadStatus } from "@/lib/database.types";
 import { formatCurrency, formatDate, formatPhone } from "@/lib/format";
 import { LEAD_STATUSES, LEAD_STATUS_LABELS } from "@/lib/leads";
 
-type DialogState = { mode: "closed" } | { mode: "create" } | { mode: "edit"; lead: Lead };
+type DialogState =
+  | { mode: "closed" }
+  | { mode: "create" }
+  | { mode: "edit"; lead: Lead }
+  | { mode: "ai"; lead: Lead };
 
 export function LeadsView({ leads }: { leads: Lead[] }) {
   const [dialog, setDialog] = useState<DialogState>({ mode: "closed" });
@@ -160,6 +165,13 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
                         <Button
                           variant="secondary"
                           size="sm"
+                          onClick={() => setDialog({ mode: "ai", lead })}
+                        >
+                          AI follow-up
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           onClick={() => setDialog({ mode: "edit", lead })}
                         >
                           Edit
@@ -188,7 +200,7 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
       </p>
 
       <Modal
-        open={dialog.mode !== "closed"}
+        open={dialog.mode === "create" || dialog.mode === "edit"}
         onClose={() => setDialog({ mode: "closed" })}
         title={dialog.mode === "edit" ? "Edit lead" : "Add lead"}
         description={
@@ -203,6 +215,15 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
           onSaved={() => setDialog({ mode: "closed" })}
           onCancel={() => setDialog({ mode: "closed" })}
         />
+      </Modal>
+
+      <Modal
+        open={dialog.mode === "ai"}
+        onClose={() => setDialog({ mode: "closed" })}
+        title="AI follow-up"
+        description="Generate a follow-up message for this lead. Draft only — nothing is sent."
+      >
+        {dialog.mode === "ai" ? <AiFollowup key={dialog.lead.id} lead={dialog.lead} /> : null}
       </Modal>
     </div>
   );
