@@ -3,12 +3,11 @@
 import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 
+import { createLeadAction, updateLeadAction } from "@/app/(app)/leads/actions";
 import {
-  createLeadAction,
-  updateLeadAction,
   INITIAL_LEAD_FORM_STATE,
   type LeadFormState,
-} from "@/app/(app)/leads/actions";
+} from "@/app/(app)/leads/form-state";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";

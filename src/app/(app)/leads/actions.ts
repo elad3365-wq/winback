@@ -7,14 +7,7 @@ import type { LeadStatus } from "@/lib/database.types";
 import { AUTOPILOT_STOP_STATUSES, isLeadStatus } from "@/lib/leads";
 import { createClient } from "@/lib/supabase/server";
 
-export type LeadFormState = {
-  status: "idle" | "success" | "error";
-  error?: string;
-  /** Changes on every successful submit so the client can react to it. */
-  submittedAt?: number;
-};
-
-export const INITIAL_LEAD_FORM_STATE: LeadFormState = { status: "idle" };
+import type { LeadFormState } from "./form-state";
 
 type ParsedLead = {
   customer_name: string;
