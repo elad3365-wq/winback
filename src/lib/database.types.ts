@@ -285,6 +285,51 @@ export type Database = {
         };
         Relationships: [];
       };
+      lead_notes: {
+        Row: {
+          id: string;
+          business_id: string;
+          lead_id: string;
+          body: string;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          lead_id: string;
+          body: string;
+          created_by?: string | null;
+        };
+        Update: {
+          body?: string;
+        };
+        Relationships: [];
+      };
+      lead_activity: {
+        Row: {
+          id: string;
+          business_id: string;
+          lead_id: string;
+          type: string;
+          metadata: Json | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          lead_id: string;
+          type: string;
+          metadata?: Json | null;
+          created_by?: string | null;
+        };
+        Update: {
+          metadata?: Json | null;
+        };
+        Relationships: [];
+      };
       leads: {
         Row: {
           id: string;
@@ -360,3 +405,5 @@ export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type BusinessAiSettings = Database["public"]["Tables"]["business_ai_settings"]["Row"];
 export type AiMessage = Database["public"]["Tables"]["ai_messages"]["Row"];
 export type AiAuditLog = Database["public"]["Tables"]["ai_audit_log"]["Row"];
+export type LeadNote = Database["public"]["Tables"]["lead_notes"]["Row"];
+export type LeadActivity = Database["public"]["Tables"]["lead_activity"]["Row"];

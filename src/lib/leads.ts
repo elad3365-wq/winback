@@ -103,3 +103,164 @@ export function calculateLeadStats(leads: Lead[]): LeadStats {
     recoveredRevenue: recovered.reduce((total, lead) => total + Number(lead.estimate_amount ?? 0), 0),
   };
 }
+
+// ---------------------------------------------------------------------------
+// CRM pipeline + dashboard helpers (pure, so they are easy to test)
+// ---------------------------------------------------------------------------
+
+export type PipelineStageKey = "new" | "contacted" | "follow_up" | "interested" | "recovered" | "lost";
+
+/**
+ * The CRM pipeline columns. Each lead keeps its EXACT status in the DB; the
+ * follow-up progression (followup_1..3, cold, etc.) simply renders under the
+ * "Follow-up" column. `dropStatus` is the status assigned when a card is dragged
+ * into that column.
+ */
+export const PIPELINE_STAGES: {
+  key: PipelineStageKey;
+  label: string;
+  dropStatus: LeadStatus;
+  accent: string;
+}[] = [
+  { key: "new", label: "New", dropStatus: "new", accent: "bg-slate-400" },
+  { key: "contacted", label: "Contacted", dropStatus: "contacted", accent: "bg-sky-400" },
+  { key: "follow_up", label: "Follow-up", dropStatus: "follow_up_needed", accent: "bg-amber-400" },
+  { key: "interested", label: "Interested", dropStatus: "interested", accent: "bg-violet-400" },
+  { key: "recovered", label: "Recovered", dropStatus: "recovered", accent: "bg-emerald-500" },
+  { key: "lost", label: "Lost", dropStatus: "lost", accent: "bg-rose-400" },
+];
+
+const STAGE_OF_STATUS: Record<LeadStatus, PipelineStageKey> = {
+  new: "new",
+  contacted: "contacted",
+  follow_up_needed: "follow_up",
+  followup_1: "follow_up",
+  followup_2: "follow_up",
+  followup_3: "follow_up",
+  cold: "follow_up",
+  paused: "follow_up",
+  interested: "interested",
+  call_requested: "interested",
+  recovered: "recovered",
+  lost: "lost",
+  unsubscribed: "lost",
+};
+
+export function stageForStatus(status: LeadStatus): PipelineStageKey {
+  return STAGE_OF_STATUS[status];
+}
+
+/** Statuses where no follow-up is expected (never flagged overdue/due). */
+export const CLOSED_STATUSES: LeadStatus[] = ["recovered", "lost", "unsubscribed", "paused"];
+
+/** Today as a UTC YYYY-MM-DD string. */
+export function todayIso(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/** The effective next-follow-up calendar date: autopilot's, else the manual one. */
+export function effectiveFollowUpDate(lead: Pick<Lead, "next_follow_up_at" | "follow_up_date">): string | null {
+  if (lead.next_follow_up_at) return lead.next_follow_up_at.slice(0, 10);
+  return lead.follow_up_date;
+}
+
+export function isOverdue(date: string | null, status: LeadStatus, now: Date = new Date()): boolean {
+  if (!date || CLOSED_STATUSES.includes(status)) return false;
+  return date < todayIso(now);
+}
+
+export function isDueToday(date: string | null, status: LeadStatus, now: Date = new Date()): boolean {
+  if (!date || CLOSED_STATUSES.includes(status)) return false;
+  return date === todayIso(now);
+}
+
+export function daysOverdue(date: string | null, now: Date = new Date()): number {
+  if (!date) return 0;
+  const due = Date.parse(`${date}T00:00:00Z`);
+  const today = Date.parse(`${todayIso(now)}T00:00:00Z`);
+  if (!Number.isFinite(due) || due >= today) return 0;
+  return Math.round((today - due) / 86_400_000);
+}
+
+export function leadIsOverdue(lead: Lead, now: Date = new Date()): boolean {
+  return isOverdue(effectiveFollowUpDate(lead), lead.status, now);
+}
+
+export function leadIsDueToday(lead: Lead, now: Date = new Date()): boolean {
+  return isDueToday(effectiveFollowUpDate(lead), lead.status, now);
+}
+
+export type DashboardMetrics = {
+  total: number;
+  byStatus: Record<LeadStatus, number>;
+  needsFollowUp: number;
+  createdThisWeek: number;
+  dueToday: number;
+  overdue: number;
+};
+
+export function dashboardMetrics(leads: Lead[], now: Date = new Date()): DashboardMetrics {
+  const byStatus = Object.fromEntries(LEAD_STATUSES.map((s) => [s, 0])) as Record<LeadStatus, number>;
+  const weekAgo = new Date(now.getTime() - 7 * 86_400_000).toISOString();
+
+  let createdThisWeek = 0;
+  let dueToday = 0;
+  let overdue = 0;
+
+  for (const lead of leads) {
+    if (lead.status in byStatus) byStatus[lead.status] += 1;
+    if (lead.created_at >= weekAgo) createdThisWeek += 1;
+    const date = effectiveFollowUpDate(lead);
+    if (isDueToday(date, lead.status, now)) dueToday += 1;
+    if (isOverdue(date, lead.status, now)) overdue += 1;
+  }
+
+  return {
+    total: leads.length,
+    byStatus,
+    needsFollowUp: dueToday + overdue,
+    createdThisWeek,
+    dueToday,
+    overdue,
+  };
+}
+
+export type DailyPoint = { date: string; count: number };
+
+/** Count of leads created per day for the last `days` days (oldest first). */
+export function buildDailySeries(createdAts: string[], days: number, now: Date = new Date()): DailyPoint[] {
+  const buckets = new Map<string, number>();
+  for (let i = days - 1; i >= 0; i -= 1) {
+    buckets.set(new Date(now.getTime() - i * 86_400_000).toISOString().slice(0, 10), 0);
+  }
+  const earliest = [...buckets.keys()][0];
+  for (const createdAt of createdAts) {
+    const day = createdAt.slice(0, 10);
+    if (day >= earliest && buckets.has(day)) buckets.set(day, (buckets.get(day) ?? 0) + 1);
+  }
+  return [...buckets.entries()].map(([date, count]) => ({ date, count }));
+}
+
+export type LeadSort = "newest" | "oldest" | "follow_up" | "recent_contact";
+
+export function sortLeads(leads: Lead[], sort: LeadSort): Lead[] {
+  const copy = [...leads];
+  switch (sort) {
+    case "oldest":
+      return copy.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    case "follow_up":
+      return copy.sort((a, b) => {
+        const da = effectiveFollowUpDate(a);
+        const db = effectiveFollowUpDate(b);
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return da.localeCompare(db);
+      });
+    case "recent_contact":
+      return copy.sort((a, b) => (b.last_follow_up_at ?? "").localeCompare(a.last_follow_up_at ?? ""));
+    case "newest":
+    default:
+      return copy.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+}

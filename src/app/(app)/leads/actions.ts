@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireBusinessContext } from "@/lib/business";
 import type { LeadStatus } from "@/lib/database.types";
 import { AUTOPILOT_STOP_STATUSES, isLeadStatus } from "@/lib/leads";
+import { logActivity } from "@/lib/activity";
 import { createClient } from "@/lib/supabase/server";
 
 import type { LeadFormState } from "./form-state";
@@ -89,15 +90,29 @@ export async function createLeadAction(
         ).toISOString()
       : null;
 
-  const { error } = await supabase.from("leads").insert({
-    ...parsed,
-    business_id: business.id,
-    created_by: user.id,
-    next_follow_up_at: nextFollowUpAt,
-  });
+  const { data: created, error } = await supabase
+    .from("leads")
+    .insert({
+      ...parsed,
+      business_id: business.id,
+      created_by: user.id,
+      next_follow_up_at: nextFollowUpAt,
+    })
+    .select("id")
+    .single();
 
   if (error) {
     return { status: "error", error: error.message };
+  }
+
+  if (created) {
+    await logActivity({
+      businessId: business.id,
+      leadId: created.id,
+      userId: user.id,
+      type: "lead_created",
+      metadata: { status: parsed.status },
+    });
   }
 
   revalidate();
@@ -140,8 +155,15 @@ export async function updateLeadStatusAction(leadId: string, status: string) {
     return { error: "Unknown status." };
   }
 
-  const { business } = await requireBusinessContext();
+  const { user, business } = await requireBusinessContext();
   const supabase = await createClient();
+
+  const { data: before } = await supabase
+    .from("leads")
+    .select("status")
+    .eq("id", leadId)
+    .eq("business_id", business.id)
+    .maybeSingle();
 
   const { error } = await supabase
     .from("leads")
@@ -153,7 +175,18 @@ export async function updateLeadStatusAction(leadId: string, status: string) {
     return { error: error.message };
   }
 
+  if (!before || before.status !== status) {
+    await logActivity({
+      businessId: business.id,
+      leadId,
+      userId: user.id,
+      type: "status_changed",
+      metadata: { from: before?.status ?? null, to: status },
+    });
+  }
+
   revalidate();
+  revalidatePath(`/leads/${leadId}`);
   return { error: undefined };
 }
 
