@@ -1,4 +1,5 @@
 import { SettingsForm } from "@/components/settings/settings-form";
+import { Alert } from "@/components/ui/alert";
 import { requireBusinessContext } from "@/lib/business";
 import type { OnboardingData } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/server";
@@ -11,7 +12,12 @@ function str(value: string | number | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ created?: string }>;
+}) {
+  const { created } = await searchParams;
   const { user, business } = await requireBusinessContext();
   const supabase = await createClient();
 
@@ -54,9 +60,17 @@ export default async function SettingsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Settings</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Edit your business details, phone, AI settings, business hours and discount rules.
+          Business details, phone, AI settings, business hours and discount rules for{" "}
+          <span className="font-medium text-slate-700">{business.name}</span> only.
         </p>
       </header>
+
+      {created === "1" ? (
+        <Alert tone="success">
+          {business.name} is created and is now your current business. Fill in the details below;
+          your other businesses are unchanged.
+        </Alert>
+      ) : null}
 
       <SettingsForm initial={initial} />
     </div>
