@@ -84,6 +84,22 @@ export function LeadForm({
         </Field>
       </div>
 
+      <Field
+        label="Email"
+        htmlFor="email"
+        hint="Optional. Emails from this address show up as this lead in the Inbox."
+      >
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          maxLength={320}
+          defaultValue={lead?.email ?? ""}
+          placeholder="dana@example.com"
+        />
+      </Field>
+      {lead?.email ? <input type="hidden" name="had_email" value="1" /> : null}
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Estimate amount" htmlFor="estimate_amount" hint="In dollars.">
           <Input
