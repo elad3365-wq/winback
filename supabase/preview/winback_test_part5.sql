@@ -1,6 +1,5 @@
 -- WinBack-Test setup, PART 5 (migration 0012, per-business Gmail).
 -- Run ONLY in WinBack-Test (onydgglobiouuusdiuhu), after parts 1 to 4.
--- Same statements as supabase/migrations/0012_gmail_integration.sql, comments removed.
 
 do $$
 begin
@@ -14,15 +13,12 @@ end
 $$;
 
 alter table public.leads add column if not exists email text;
-
 alter table public.leads drop constraint if exists leads_email_format;
 alter table public.leads
   add constraint leads_email_format
   check (email is null or (char_length(email) <= 320 and position('@' in email) > 1));
-
 create index if not exists leads_business_email_idx
-  on public.leads (business_id, lower(email))
-  where email is not null;
+  on public.leads (business_id, lower(email)) where email is not null;
 
 create table if not exists public.gmail_connections (
   id uuid primary key default gen_random_uuid(),
@@ -38,7 +34,6 @@ create table if not exists public.gmail_connections (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 drop trigger if exists gmail_connections_set_updated_at on public.gmail_connections;
 create trigger gmail_connections_set_updated_at
   before update on public.gmail_connections
@@ -70,12 +65,10 @@ create table if not exists public.email_messages (
   created_at timestamptz not null default now(),
   unique (connection_id, gmail_message_id)
 );
-
 create index if not exists email_messages_business_received_idx
   on public.email_messages (business_id, received_at desc);
 create index if not exists email_messages_lead_idx
-  on public.email_messages (lead_id, received_at desc)
-  where lead_id is not null;
+  on public.email_messages (lead_id, received_at desc) where lead_id is not null;
 
 create table if not exists public.email_drafts (
   id uuid primary key default gen_random_uuid(),
@@ -97,14 +90,10 @@ create table if not exists public.email_drafts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create unique index if not exists email_drafts_one_open_per_message
-  on public.email_drafts (email_message_id)
-  where status in ('draft', 'sending', 'failed');
-
+  on public.email_drafts (email_message_id) where status in ('draft', 'sending', 'failed');
 create index if not exists email_drafts_business_created_idx
   on public.email_drafts (business_id, created_at desc);
-
 drop trigger if exists email_drafts_set_updated_at on public.email_drafts;
 create trigger email_drafts_set_updated_at
   before update on public.email_drafts
@@ -118,56 +107,41 @@ set search_path = public
 as $$
 begin
   if tg_table_name = 'gmail_connection_secrets' then
-    if not exists (
-      select 1 from public.gmail_connections c
-      where c.id = new.connection_id and c.business_id = new.business_id
-    ) then
+    if not exists (select 1 from public.gmail_connections c
+      where c.id = new.connection_id and c.business_id = new.business_id) then
       raise exception 'That Gmail connection does not belong to this business.' using errcode = '42501';
     end if;
     return new;
   end if;
-
   if tg_table_name = 'email_messages' then
-    if not exists (
-      select 1 from public.gmail_connections c
-      where c.id = new.connection_id and c.business_id = new.business_id
-    ) then
+    if not exists (select 1 from public.gmail_connections c
+      where c.id = new.connection_id and c.business_id = new.business_id) then
       raise exception 'That Gmail connection does not belong to this business.' using errcode = '42501';
     end if;
   end if;
-
   if tg_table_name = 'email_drafts' then
-    if not exists (
-      select 1 from public.email_messages m
-      where m.id = new.email_message_id and m.business_id = new.business_id
-    ) then
+    if not exists (select 1 from public.email_messages m
+      where m.id = new.email_message_id and m.business_id = new.business_id) then
       raise exception 'That email does not belong to this business.' using errcode = '42501';
     end if;
   end if;
-
-  if new.lead_id is not null and not exists (
-    select 1 from public.leads l
-    where l.id = new.lead_id and l.business_id = new.business_id
-  ) then
+  if new.lead_id is not null and not exists (select 1 from public.leads l
+    where l.id = new.lead_id and l.business_id = new.business_id) then
     raise exception 'That lead does not belong to this business.' using errcode = '42501';
   end if;
-
   return new;
 end;
 $$;
-
 revoke all on function public.ensure_email_rows_in_business() from public;
 
 drop trigger if exists gmail_connection_secrets_in_business on public.gmail_connection_secrets;
 create trigger gmail_connection_secrets_in_business
   before insert or update on public.gmail_connection_secrets
   for each row execute function public.ensure_email_rows_in_business();
-
 drop trigger if exists email_messages_in_business on public.email_messages;
 create trigger email_messages_in_business
   before insert or update on public.email_messages
   for each row execute function public.ensure_email_rows_in_business();
-
 drop trigger if exists email_drafts_in_business on public.email_drafts;
 create trigger email_drafts_in_business
   before insert or update on public.email_drafts
@@ -177,7 +151,6 @@ revoke all on public.gmail_connections from anon, authenticated;
 revoke all on public.gmail_connection_secrets from anon, authenticated;
 revoke all on public.email_messages from anon, authenticated;
 revoke all on public.email_drafts from anon, authenticated;
-
 grant select on public.gmail_connections to authenticated;
 grant select on public.email_messages to authenticated;
 grant select on public.email_drafts to authenticated;
@@ -188,19 +161,11 @@ alter table public.email_messages enable row level security;
 alter table public.email_drafts enable row level security;
 
 drop policy if exists "gmail_connections_select_member" on public.gmail_connections;
-create policy "gmail_connections_select_member"
-  on public.gmail_connections for select
-  to authenticated
-  using (public.is_business_member(business_id));
-
+create policy "gmail_connections_select_member" on public.gmail_connections
+  for select to authenticated using (public.is_business_member(business_id));
 drop policy if exists "email_messages_select_member" on public.email_messages;
-create policy "email_messages_select_member"
-  on public.email_messages for select
-  to authenticated
-  using (public.is_business_member(business_id));
-
+create policy "email_messages_select_member" on public.email_messages
+  for select to authenticated using (public.is_business_member(business_id));
 drop policy if exists "email_drafts_select_member" on public.email_drafts;
-create policy "email_drafts_select_member"
-  on public.email_drafts for select
-  to authenticated
-  using (public.is_business_member(business_id));
+create policy "email_drafts_select_member" on public.email_drafts
+  for select to authenticated using (public.is_business_member(business_id));
