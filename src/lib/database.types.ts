@@ -391,6 +391,21 @@ export type Database = {
         Args: { p_business_id: string };
         Returns: boolean;
       };
+      create_business: {
+        Args: {
+          p_name: string;
+          p_business_type?: string | null;
+          p_custom_business_type?: string | null;
+          p_phone?: string | null;
+          p_email?: string | null;
+          p_website?: string | null;
+          p_country?: string | null;
+          p_state?: string | null;
+          p_city?: string | null;
+          p_currency?: string | null;
+        };
+        Returns: string;
+      };
     };
     Enums: {
       lead_status: LeadStatus;
