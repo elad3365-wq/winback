@@ -31,6 +31,8 @@ export type AiMessageStatus =
 export type AutopilotMode = "manual" | "assisted" | "full";
 export type AiTone = "professional" | "friendly" | "direct" | "premium";
 export type UnsubscribeStatus = "subscribed" | "unsubscribed";
+export type GmailConnectionStatus = "connected" | "needs_reconnect" | "disconnected";
+export type EmailDraftStatus = "draft" | "sending" | "sent" | "failed" | "discarded";
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -285,6 +287,146 @@ export type Database = {
         };
         Relationships: [];
       };
+      gmail_connections: {
+        Row: {
+          id: string;
+          business_id: string;
+          email_address: string;
+          status: GmailConnectionStatus;
+          scopes: string | null;
+          connected_by: string | null;
+          connected_at: string;
+          last_synced_at: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          email_address: string;
+          status?: GmailConnectionStatus;
+          scopes?: string | null;
+          connected_by?: string | null;
+          connected_at?: string;
+          last_synced_at?: string | null;
+          last_error?: string | null;
+        };
+        Update: {
+          email_address?: string;
+          status?: GmailConnectionStatus;
+          scopes?: string | null;
+          connected_by?: string | null;
+          connected_at?: string;
+          last_synced_at?: string | null;
+          last_error?: string | null;
+        };
+        Relationships: [];
+      };
+      gmail_connection_secrets: {
+        Row: {
+          connection_id: string;
+          business_id: string;
+          refresh_token_encrypted: string;
+          updated_at: string;
+        };
+        Insert: {
+          connection_id: string;
+          business_id: string;
+          refresh_token_encrypted: string;
+          updated_at?: string;
+        };
+        Update: {
+          refresh_token_encrypted?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      email_messages: {
+        Row: {
+          id: string;
+          business_id: string;
+          connection_id: string;
+          lead_id: string | null;
+          direction: "inbound" | "outbound";
+          gmail_message_id: string;
+          gmail_thread_id: string;
+          rfc822_message_id: string | null;
+          from_address: string;
+          from_name: string | null;
+          to_address: string | null;
+          subject: string | null;
+          snippet: string | null;
+          body_text: string | null;
+          received_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          connection_id: string;
+          lead_id?: string | null;
+          direction: "inbound" | "outbound";
+          gmail_message_id: string;
+          gmail_thread_id: string;
+          rfc822_message_id?: string | null;
+          from_address: string;
+          from_name?: string | null;
+          to_address?: string | null;
+          subject?: string | null;
+          snippet?: string | null;
+          body_text?: string | null;
+          received_at: string;
+        };
+        Update: {
+          lead_id?: string | null;
+        };
+        Relationships: [];
+      };
+      email_drafts: {
+        Row: {
+          id: string;
+          business_id: string;
+          email_message_id: string;
+          lead_id: string | null;
+          to_address: string;
+          subject: string;
+          body: string;
+          status: EmailDraftStatus;
+          ai_model: string | null;
+          discount_offered: boolean;
+          approved_by: string | null;
+          approved_at: string | null;
+          sent_at: string | null;
+          sent_gmail_message_id: string | null;
+          error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          email_message_id: string;
+          lead_id?: string | null;
+          to_address: string;
+          subject: string;
+          body: string;
+          status?: EmailDraftStatus;
+          ai_model?: string | null;
+          discount_offered?: boolean;
+        };
+        Update: {
+          lead_id?: string | null;
+          body?: string;
+          status?: EmailDraftStatus;
+          approved_by?: string | null;
+          approved_at?: string | null;
+          sent_at?: string | null;
+          sent_gmail_message_id?: string | null;
+          error?: string | null;
+        };
+        Relationships: [];
+      };
       lead_notes: {
         Row: {
           id: string;
@@ -336,6 +478,7 @@ export type Database = {
           business_id: string;
           customer_name: string;
           phone: string;
+          email: string | null;
           service: string;
           estimate_amount: number;
           status: LeadStatus;
@@ -354,6 +497,7 @@ export type Database = {
           business_id: string;
           customer_name: string;
           phone: string;
+          email?: string | null;
           service: string;
           estimate_amount?: number;
           status?: LeadStatus;
@@ -368,6 +512,7 @@ export type Database = {
         Update: {
           customer_name?: string;
           phone?: string;
+          email?: string | null;
           service?: string;
           estimate_amount?: number;
           status?: LeadStatus;
@@ -422,3 +567,6 @@ export type AiMessage = Database["public"]["Tables"]["ai_messages"]["Row"];
 export type AiAuditLog = Database["public"]["Tables"]["ai_audit_log"]["Row"];
 export type LeadNote = Database["public"]["Tables"]["lead_notes"]["Row"];
 export type LeadActivity = Database["public"]["Tables"]["lead_activity"]["Row"];
+export type GmailConnection = Database["public"]["Tables"]["gmail_connections"]["Row"];
+export type EmailMessage = Database["public"]["Tables"]["email_messages"]["Row"];
+export type EmailDraft = Database["public"]["Tables"]["email_drafts"]["Row"];

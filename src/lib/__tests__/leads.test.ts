@@ -21,6 +21,7 @@ function lead(partial: Partial<Lead>): Lead {
     business_id: "b",
     customer_name: "Test",
     phone: "5551234567",
+    email: null,
     service: "svc",
     estimate_amount: 0,
     status: "new",
