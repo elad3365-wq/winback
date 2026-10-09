@@ -7,9 +7,9 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "WinBack | Recover Lost Revenue From Existing Leads",
+  title: "WinBack Early Access | Lead Follow-Up for Service Businesses",
   description:
-    "WinBack helps local service businesses track lost opportunities, follow up with customers, and recover more revenue from the leads and estimates they already have.",
+    "Join WinBack's free 14-day founding pilot. Keep track of quote requests, prepare AI follow-up drafts you review before sending, and see which opportunities still need attention.",
 };
 
 /**

@@ -6,10 +6,12 @@
  */
 
 export const BUSINESS_TYPES = [
-  "Auto Repair",
-  "Plumbing",
   "HVAC",
+  "Roofing",
+  "Cleaning",
+  "Plumbing",
   "Electrical",
+  "Auto Repair",
   "Contractor / Remodeling",
   "Other local service",
 ] as const;
