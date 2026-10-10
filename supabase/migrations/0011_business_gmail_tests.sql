@@ -32,7 +32,7 @@ set local client_min_messages = notice;
 insert into auth.users (id, email) values
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'tenant-a@winback.test'),
   ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'tenant-b@winback.test'),
-  ('mmmmmmmm-mmmm-mmmm-mmmm-mmmmmmmmmmmm', 'member-m@winback.test');
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'member-m@winback.test');
 
 do $$
 declare
@@ -42,7 +42,7 @@ begin
   select id into v_bus_b from public.businesses where owner_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
   insert into public.business_members (business_id, user_id, role)
-    values (v_bus_a, 'mmmmmmmm-mmmm-mmmm-mmmm-mmmmmmmmmmmm', 'member')
+    values (v_bus_a, 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'member')
     on conflict (business_id, user_id) do nothing;
 
   insert into public.leads (business_id, customer_name, phone, service)
@@ -210,7 +210,7 @@ $$;
 -- =============================================================================
 -- TEST 7 — OWNER-ONLY APPROVAL: a non-owner member cannot approve.
 -- =============================================================================
-select set_config('request.jwt.claims', '{"sub":"mmmmmmmm-mmmm-mmmm-mmmm-mmmmmmmmmmmm","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated"}', true);
 
 do $$
 declare v_reply uuid;
