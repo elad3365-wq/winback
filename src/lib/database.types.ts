@@ -32,6 +32,12 @@ export type AutopilotMode = "manual" | "assisted" | "full";
 export type AiTone = "professional" | "friendly" | "direct" | "premium";
 export type UnsubscribeStatus = "subscribed" | "unsubscribed";
 
+/** Direction of a stored Gmail message for a business mailbox. */
+export type EmailDirection = "inbound" | "outbound";
+
+/** Lifecycle of an AI-drafted email reply (draft → approved → sent). */
+export type GmailReplyStatus = "draft" | "edited" | "approved" | "sent" | "cancelled";
+
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
@@ -380,6 +386,133 @@ export type Database = {
         };
         Relationships: [];
       };
+      business_gmail_connections: {
+        Row: {
+          business_id: string;
+          google_account_email: string;
+          access_token_encrypted: string;
+          refresh_token_encrypted: string | null;
+          access_token_expires_at: string | null;
+          scope: string | null;
+          history_id: string | null;
+          watch_expiration: string | null;
+          connected_by: string | null;
+          revoked_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          business_id: string;
+          google_account_email: string;
+          access_token_encrypted: string;
+          refresh_token_encrypted?: string | null;
+          access_token_expires_at?: string | null;
+          scope?: string | null;
+          history_id?: string | null;
+          watch_expiration?: string | null;
+          connected_by?: string | null;
+          revoked_at?: string | null;
+        };
+        Update: {
+          google_account_email?: string;
+          access_token_encrypted?: string;
+          refresh_token_encrypted?: string | null;
+          access_token_expires_at?: string | null;
+          scope?: string | null;
+          history_id?: string | null;
+          watch_expiration?: string | null;
+          revoked_at?: string | null;
+        };
+        Relationships: [];
+      };
+      business_email_messages: {
+        Row: {
+          id: string;
+          business_id: string;
+          gmail_message_id: string;
+          gmail_thread_id: string | null;
+          lead_id: string | null;
+          direction: EmailDirection;
+          from_address: string | null;
+          to_addresses: string[] | null;
+          subject: string | null;
+          snippet: string | null;
+          body_text: string | null;
+          rfc822_message_id: string | null;
+          in_reply_to: string | null;
+          email_references: string | null;
+          internal_date: string | null;
+          label_ids: string[] | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          gmail_message_id: string;
+          gmail_thread_id?: string | null;
+          lead_id?: string | null;
+          direction?: EmailDirection;
+          from_address?: string | null;
+          to_addresses?: string[] | null;
+          subject?: string | null;
+          snippet?: string | null;
+          body_text?: string | null;
+          rfc822_message_id?: string | null;
+          in_reply_to?: string | null;
+          email_references?: string | null;
+          internal_date?: string | null;
+          label_ids?: string[] | null;
+        };
+        Update: {
+          lead_id?: string | null;
+          label_ids?: string[] | null;
+          snippet?: string | null;
+          body_text?: string | null;
+        };
+        Relationships: [];
+      };
+      business_email_replies: {
+        Row: {
+          id: string;
+          business_id: string;
+          message_id: string;
+          lead_id: string | null;
+          status: GmailReplyStatus;
+          body: string;
+          ai_model: string | null;
+          prompt_inputs: Json | null;
+          discount_offered: boolean;
+          approved_at: string | null;
+          approved_by: string | null;
+          sent_at: string | null;
+          gmail_sent_message_id: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          message_id: string;
+          lead_id?: string | null;
+          status?: GmailReplyStatus;
+          body: string;
+          ai_model?: string | null;
+          prompt_inputs?: Json | null;
+          discount_offered?: boolean;
+          created_by?: string | null;
+        };
+        Update: {
+          status?: GmailReplyStatus;
+          body?: string;
+          lead_id?: string | null;
+          approved_at?: string | null;
+          approved_by?: string | null;
+          sent_at?: string | null;
+          gmail_sent_message_id?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -407,3 +540,6 @@ export type AiMessage = Database["public"]["Tables"]["ai_messages"]["Row"];
 export type AiAuditLog = Database["public"]["Tables"]["ai_audit_log"]["Row"];
 export type LeadNote = Database["public"]["Tables"]["lead_notes"]["Row"];
 export type LeadActivity = Database["public"]["Tables"]["lead_activity"]["Row"];
+export type BusinessGmailConnection = Database["public"]["Tables"]["business_gmail_connections"]["Row"];
+export type BusinessEmailMessage = Database["public"]["Tables"]["business_email_messages"]["Row"];
+export type BusinessEmailReply = Database["public"]["Tables"]["business_email_replies"]["Row"];

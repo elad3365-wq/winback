@@ -31,21 +31,29 @@ export type FollowupGeneration = {
   model: string;
 };
 
-export async function generateFollowup(inputs: FollowupInputs): Promise<FollowupGeneration> {
+/**
+ * Low-level helper: run one short writing task against the configured model and
+ * return the text + the model id actually used. Shared by the follow-up drafter
+ * and the Gmail reply drafter so the model choice, effort, and client setup stay
+ * in one place. Throws AiNotConfiguredError when no key is present.
+ */
+export async function completeText(
+  system: string,
+  user: string,
+  maxTokens = 1024,
+): Promise<FollowupGeneration> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) {
     throw new AiNotConfiguredError();
   }
 
   const client = new Anthropic({ apiKey });
-  const { system, user } = buildFollowupPrompt(inputs);
   const model = resolveFollowupModel();
 
   const response = await client.messages.create({
     model,
-    max_tokens: 1024,
-    // Low effort: this is a short, well-specified writing task, so keep thinking
-    // (and cost/latency) minimal.
+    max_tokens: maxTokens,
+    // Low effort: short, well-specified writing task — keep thinking/cost/latency minimal.
     output_config: { effort: "low" },
     system,
     messages: [{ role: "user", content: user }],
@@ -58,4 +66,9 @@ export async function generateFollowup(inputs: FollowupInputs): Promise<Followup
     .trim();
 
   return { content, model: response.model ?? model };
+}
+
+export async function generateFollowup(inputs: FollowupInputs): Promise<FollowupGeneration> {
+  const { system, user } = buildFollowupPrompt(inputs);
+  return completeText(system, user);
 }

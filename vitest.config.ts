@@ -13,6 +13,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // The `server-only` marker has no runtime under vitest; stub it so
+      // server-only modules (gmail crypto/oauth/reply) can be unit-tested.
+      "server-only": fileURLToPath(new URL("./src/test/server-only-stub.ts", import.meta.url)),
     },
   },
 });

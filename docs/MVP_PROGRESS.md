@@ -21,7 +21,7 @@ results.
 | 2 | Preview env → WinBack-Test | 🟡 guide ready, awaiting user | `docs/PREVIEW_SETUP.md` has exact Vercel/Supabase steps + an isolation-verification checklist. One new finding: WinBack-Test must have **Confirm email OFF** for automated E2E. Applying the settings is the user's action. |
 | 3 | Customer app workflows | 🟡 ~80% built | Auth, onboarding, CRM, leads, notes/activity, AI drafts, approval all exist. Gaps: see below. |
 | 4 | AI system | 🟡 in progress | Anthropic wired. **Model fixed to cost-efficient + configurable.** Guardrails now unit-tested. Provider layer (GPT/Gemini) deferred — Claude-only MVP. |
-| 5 | Per-business Gmail | ❌ not built | Net-new. Needs migration (approval-gated) + Google OAuth client (user). Code will land behind a feature flag. |
+| 5 | Per-business Gmail | 🟡 built behind flag; needs migration + Google client | Full vertical slice implemented behind `WINBACK_GMAIL_ENABLED` (default off): OAuth connect/callback/disconnect, encrypted tokens, idempotent inbox sync, link-to-lead, AI reply draft→owner approve→gated send. Migration `0011` delivered for review (apply to WinBack-Test only). Needs a Google OAuth client + encryption key (user). Real send double-gated by `WINBACK_GMAIL_ALLOW_SEND`. |
 | 6 | Safe automation | 🟡 ~85% built | Cron is idempotent, draft-only, stop-states, audit log; delay/business-hours logic now unit-tested. "Cancel on customer reply" depends on Phase 5 inbound. |
 | 7 | End-to-end testing | 🟡 scaffolded | Vitest unit suite expanded to **44 tests** (guardrails, scheduling). Playwright E2E specs written (signup→onboarding, lead→AI draft→approve, tenant isolation), parameterized by `E2E_BASE_URL`; run once Preview is up. |
 | 8 | Pilot prep | ⬜ pending | Checklist + readiness report at the end. |
@@ -117,3 +117,21 @@ exact steps; other independent dev proceeds meanwhile.
   `E2E_BASE_URL`; skip when unset; 4 tests discovered). `npm run e2e` script
   added, `@playwright/test@1.56.0` devDep. Wrote `docs/PREVIEW_SETUP.md`
   (Phase 2 setup + isolation verification) and `e2e/README.md`.
+- _This session (milestone 3, Phase 5 — per-business Gmail)_: full tenant-scoped
+  Gmail integration behind `WINBACK_GMAIL_ENABLED` (off by default). Ported the
+  proven pure modules from Ops (crypto AES-256-GCM, Google OAuth, Gmail REST,
+  MIME parse) into `src/lib/gmail/`; added `config.ts` (feature flag + least-
+  privilege scopes), `oauth-state.ts` (signed, CSRF-safe state binding the round
+  trip to one business), `connection.ts` (encrypted token store + refresh +
+  disconnect, RLS/owner-scoped), `sync.ts` (idempotent inbox store), `reply.ts`
+  (AI reply prompt + guardrails). Routes `/api/gmail/connect` + `/callback`
+  (owner-only, state-verified, never writes another tenant's mailbox). Server
+  actions for sync / generate / edit / approve / send / link-to-lead / disconnect;
+  **send double-gated** by `WINBACK_GMAIL_ALLOW_SEND` so no real email leaves
+  during the pilot. UI: `/settings/email` + connection + inbox client components;
+  nav link added. Migration `0011_business_gmail.sql` (three RLS tables, tenant
+  composite FKs, owner-only approve/send + sent-immutable + edit-invalidates-
+  approval trigger) — **for review, apply to WinBack-Test only**. Types added to
+  `database.types.ts`. Tests +23 (crypto, signed state, MIME parse/reply build,
+  reply guardrails) → **67 total, all green**; `tsc`, ESLint, and `next build`
+  all pass. `.env.example` documents every new SERVER-ONLY var.

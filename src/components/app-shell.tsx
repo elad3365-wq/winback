@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/leads", label: "Leads" },
   { href: "/settings/ai", label: "AI Autopilot" },
+  { href: "/settings/email", label: "Email" },
   { href: "/settings", label: "Settings" },
 ];
 
