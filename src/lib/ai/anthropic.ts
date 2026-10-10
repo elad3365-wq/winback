@@ -3,16 +3,17 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 
 import { buildFollowupPrompt, type FollowupInputs } from "@/lib/ai/followup";
+import { resolveFollowupModel } from "@/lib/ai/models";
 
 /**
  * Server-only wrapper around the Anthropic API. The key is read from a
  * server-only environment variable and never reaches the browser: this module
  * imports "server-only", so any accidental client import fails the build.
+ *
+ * The model is resolved per call from WINBACK_FOLLOWUP_MODEL (see
+ * `lib/ai/models.ts`) with a cost-efficient default — short, human-reviewed
+ * follow-ups don't need the most expensive model.
  */
-
-// Short SMS/email follow-ups: a small, capable model call. Kept as a constant
-// so the stored `model` column and the request stay in sync.
-export const FOLLOWUP_MODEL = "claude-opus-5";
 
 export class AiNotConfiguredError extends Error {
   constructor() {
@@ -38,9 +39,10 @@ export async function generateFollowup(inputs: FollowupInputs): Promise<Followup
 
   const client = new Anthropic({ apiKey });
   const { system, user } = buildFollowupPrompt(inputs);
+  const model = resolveFollowupModel();
 
   const response = await client.messages.create({
-    model: FOLLOWUP_MODEL,
+    model,
     max_tokens: 1024,
     // Low effort: this is a short, well-specified writing task, so keep thinking
     // (and cost/latency) minimal.
@@ -55,5 +57,5 @@ export async function generateFollowup(inputs: FollowupInputs): Promise<Followup
     .join("")
     .trim();
 
-  return { content, model: response.model ?? FOLLOWUP_MODEL };
+  return { content, model: response.model ?? model };
 }
