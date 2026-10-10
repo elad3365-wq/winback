@@ -22,9 +22,9 @@ results.
 | 3 | Customer app workflows | 🟡 ~80% built | Auth, onboarding, CRM, leads, notes/activity, AI drafts, approval all exist. Gaps: see below. |
 | 4 | AI system | 🟡 in progress | Anthropic wired. **Model fixed to cost-efficient + configurable.** Guardrails now unit-tested. Provider layer (GPT/Gemini) deferred — Claude-only MVP. |
 | 5 | Per-business Gmail | 🟡 built behind flag; needs migration + Google client | Full vertical slice implemented behind `WINBACK_GMAIL_ENABLED` (default off): OAuth connect/callback/disconnect, encrypted tokens, idempotent inbox sync, link-to-lead, AI reply draft→owner approve→gated send. Migration `0011` delivered for review (apply to WinBack-Test only). Needs a Google OAuth client + encryption key (user). Real send double-gated by `WINBACK_GMAIL_ALLOW_SEND`. |
-| 6 | Safe automation | 🟡 ~85% built | Cron is idempotent, draft-only, stop-states, audit log; delay/business-hours logic now unit-tested. "Cancel on customer reply" depends on Phase 5 inbound. |
-| 7 | End-to-end testing | 🟡 scaffolded | Vitest unit suite expanded to **44 tests** (guardrails, scheduling). Playwright E2E specs written (signup→onboarding, lead→AI draft→approve, tenant isolation), parameterized by `E2E_BASE_URL`; run once Preview is up. |
-| 8 | Pilot prep | ⬜ pending | Checklist + readiness report at the end. |
+| 6 | Safe automation | ✅ complete | Cron idempotent, draft-only, stop-states, audit log. Reply detection added: linking an inbound email to a lead pauses autopilot; unsubscribe → hard stop; both clear the schedule so the cron stops. Duplicate reply-draft prevention. |
+| 7 | End-to-end testing | 🟡 scaffolded | Vitest unit suite now **73 tests** (guardrails, scheduling, Gmail crypto/state/parse/reply/reply-detection). Playwright E2E specs run once Preview is up. Live Gmail E2E is manual (checklist). |
+| 8 | Pilot prep | ✅ report ready | `docs/PILOT_READINESS.md` (readiness + safety posture) and `docs/PILOT_SETUP_he.md` (single Hebrew setup checklist). |
 
 ## Phase 1 — audit findings (verified by reading the code)
 
@@ -135,3 +135,10 @@ exact steps; other independent dev proceeds meanwhile.
   `database.types.ts`. Tests +23 (crypto, signed state, MIME parse/reply build,
   reply guardrails) → **67 total, all green**; `tsc`, ESLint, and `next build`
   all pass. `.env.example` documents every new SERVER-ONLY var.
+- _This session (milestone 4, Phase 6 + 8)_: reply detection — `reply-detection.ts`
+  (`isUnsubscribeRequest`, `leadUpdateForInboundReply`, pure + tested); linking an
+  inbound email to a lead now pauses the autopilot (or hard-stops on unsubscribe),
+  clears the schedule, and logs lead_activity + ai_audit_log. Duplicate
+  reply-draft prevention in `generateReplyAction`. Tests +6 → **73 total, green**;
+  `tsc`/ESLint/`next build` pass. Phase 8: `docs/PILOT_READINESS.md`. Single
+  Hebrew setup checklist remains `docs/PILOT_SETUP_he.md`.

@@ -8,6 +8,11 @@ import { sendRawMessage } from "@/lib/gmail/api";
 import { isGmailFeatureEnabled } from "@/lib/gmail/config";
 import { disconnect, getAccessToken } from "@/lib/gmail/connection";
 import { buildRawReply, buildReferences, replySubject } from "@/lib/gmail/parse";
+import {
+  inboundReplyReason,
+  isUnsubscribeRequest,
+  leadUpdateForInboundReply,
+} from "@/lib/gmail/reply-detection";
 import { generateReply, type ReplyInputs } from "@/lib/gmail/reply";
 import { syncInbox } from "@/lib/gmail/sync";
 import { createClient } from "@/lib/supabase/server";
@@ -64,13 +69,41 @@ export async function linkMessageToLeadAction(
   if (disabled) return { error: disabled };
   const { business } = await requireBusinessContext();
   const supabase = await createClient();
+
   // leadId must belong to the same business (also enforced by the composite FK).
-  const { error } = await supabase
+  const { data: message, error } = await supabase
     .from("business_email_messages")
     .update({ lead_id: leadId })
     .eq("id", messageId)
-    .eq("business_id", business.id);
+    .eq("business_id", business.id)
+    .select("id, direction, body_text, snippet")
+    .maybeSingle();
   if (error) return { error: error.message };
+  if (!message) return { error: "Message not found." };
+
+  // Reply detection: linking an INBOUND email to a lead means the customer
+  // engaged — stop the autopilot for that lead (unsubscribe = hard stop,
+  // otherwise pause). Idempotent, and scoped to this business by RLS.
+  if (leadId && message.direction === "inbound") {
+    const unsubscribe = isUnsubscribeRequest(message.body_text ?? message.snippet ?? "");
+    const update = leadUpdateForInboundReply({ unsubscribe });
+    await supabase.from("leads").update(update).eq("id", leadId).eq("business_id", business.id);
+
+    const reason = inboundReplyReason({ unsubscribe });
+    await supabase.from("lead_activity").insert({
+      business_id: business.id,
+      lead_id: leadId,
+      type: reason,
+      metadata: { message_id: messageId },
+    });
+    await supabase.from("ai_audit_log").insert({
+      business_id: business.id,
+      lead_id: leadId,
+      event: reason,
+      detail: { message_id: messageId },
+    });
+  }
+
   revalidatePath("/settings/email");
   return { ok: true };
 }
@@ -88,6 +121,20 @@ export async function generateReplyAction(messageId: string): Promise<ActionResu
     .eq("business_id", business.id)
     .maybeSingle();
   if (!message) return { error: "Message not found." };
+
+  // Duplicate prevention: reuse an existing active draft for this message
+  // instead of generating (and paying for) a second one.
+  const { data: existingReply } = await supabase
+    .from("business_email_replies")
+    .select("id")
+    .eq("business_id", business.id)
+    .eq("message_id", message.id)
+    .in("status", ["draft", "edited", "approved"])
+    .limit(1)
+    .maybeSingle();
+  if (existingReply) {
+    return { ok: true, data: { replyId: existingReply.id } };
+  }
 
   const [{ data: settings }, lead] = await Promise.all([
     supabase.from("business_ai_settings").select("*").eq("business_id", business.id).maybeSingle(),
