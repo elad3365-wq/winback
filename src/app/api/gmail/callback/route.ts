@@ -59,7 +59,9 @@ export async function GET(request: NextRequest) {
   try {
     const tokens = await exchangeCodeForTokens(gmailConfig(), code);
     const profile = await getProfile(tokens.access_token);
-    await storeConnection(supabase, {
+    // Token write goes through the service role inside storeConnection (users
+    // have no write access to token columns). Ownership is already verified above.
+    await storeConnection({
       businessId: business.id,
       userId: user.id,
       email: profile.emailAddress,

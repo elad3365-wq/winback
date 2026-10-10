@@ -102,6 +102,32 @@ exact steps; other independent dev proceeds meanwhile.
 - **Gmail lands behind a feature flag**, migration delivered for review (same
   PART-style as the WinBack-Test setup); no auto-send in the pilot.
 
+## Security hardening of 0011 (per review)
+
+Applied to `0011_business_gmail.sql` + app code + new tests:
+1. **WinBack-Test guard** — refuses to run without `winback_test_marker` and the
+   PART 1–3 helpers; cannot execute against Production.
+2. **Server-only tokens** — authenticated users get SELECT on status columns
+   only (no token columns) and no write access; all token read/write/refresh/
+   disconnect go through the service role (`connection.ts` refactor,
+   `getConnectionStatus` selects safe columns).
+3. **Composite FK for replies** — `(business_id, message_id)` →
+   `business_email_messages(business_id, id)` with a `unique (business_id, id)`.
+4. **PG15+ column-list `SET NULL`** — lead FKs use `on delete set null (lead_id)`
+   so deleting a lead clears only `lead_id`, never the NOT NULL `business_id`.
+5. **Backend-only send** — users cannot set `status='sent'`, `sent_at`, or
+   `gmail_sent_message_id` (column grants + trigger); the service role marks
+   sent only after Gmail confirms (`sendReplyAction` refactor). Owner-only
+   approval and edit-invalidates-approval preserved.
+6. **Locked-down writes** — messages are service-role-written (users may update
+   only `lead_id`, cannot insert/delete/forge); replies have no DELETE grant
+   (use `cancelled`); a sent reply is immutable.
+7. **Rollback-only tests** — `0011_business_gmail_tests.sql` covers the guard,
+   tenant isolation, server-only tokens, approval integrity, send restrictions,
+   and FK deletion behavior.
+
+All app code still compiles and passes (tsc, 73 tests, ESLint, `next build`).
+
 ## Changelog
 
 - _This session_: created branch `claude/winback-mvp`; added this progress doc;

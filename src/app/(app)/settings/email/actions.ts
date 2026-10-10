@@ -15,6 +15,7 @@ import {
 } from "@/lib/gmail/reply-detection";
 import { generateReply, type ReplyInputs } from "@/lib/gmail/reply";
 import { syncInbox } from "@/lib/gmail/sync";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -36,9 +37,8 @@ export async function syncInboxAction(): Promise<ActionResult<{ stored: number; 
   const disabled = ensureEnabled();
   if (disabled) return { error: disabled };
   const { business } = await requireBusinessContext();
-  const supabase = await createClient();
   try {
-    const result = await syncInbox(supabase, business.id, { maxResults: 25 });
+    const result = await syncInbox(business.id, { maxResults: 25 });
     revalidatePath("/settings/email");
     return { ok: true, data: { stored: result.stored, skipped: result.skipped } };
   } catch (error) {
@@ -51,9 +51,8 @@ export async function disconnectGmailAction(): Promise<ActionResult> {
   if (disabled) return { error: disabled };
   const { user, business } = await requireBusinessContext();
   if (business.owner_id !== user.id) return { error: "Only the business owner can disconnect Gmail." };
-  const supabase = await createClient();
   try {
-    await disconnect(supabase, business.id);
+    await disconnect(business.id);
     revalidatePath("/settings/email");
     return { ok: true };
   } catch (error) {
@@ -313,17 +312,20 @@ export async function sendReplyAction(replyId: string): Promise<ActionResult> {
 
   let sentMessageId: string;
   try {
-    const accessToken = await getAccessToken(supabase, business.id);
+    const accessToken = await getAccessToken(business.id);
     const result = await sendRawMessage(accessToken, raw, message.gmail_thread_id ?? undefined);
     sentMessageId = result.id;
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Sending failed." };
   }
 
-  // Record the send. The trigger enforces approved → sent and stamps sent_at.
-  const { error: updErr } = await supabase
+  // Mark sent AFTER Gmail confirms, via the SERVICE ROLE — users cannot set the
+  // send fields (migration 0011). This is the only path that marks a reply sent.
+  const admin = createAdminClient();
+  if (!admin) return { error: "Sent, but cannot record it: SUPABASE_SERVICE_ROLE_KEY is not configured." };
+  const { error: updErr } = await admin
     .from("business_email_replies")
-    .update({ status: "sent", gmail_sent_message_id: sentMessageId })
+    .update({ status: "sent", sent_at: new Date().toISOString(), gmail_sent_message_id: sentMessageId })
     .eq("id", replyId)
     .eq("business_id", business.id);
   if (updErr) return { error: `Sent, but could not record it: ${updErr.message}` };

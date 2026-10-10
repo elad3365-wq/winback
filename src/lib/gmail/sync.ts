@@ -1,30 +1,26 @@
 import "server-only";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-
-import type { Database } from "@/lib/database.types";
 import { getMessage, listInboxMessages } from "@/lib/gmail/api";
 import { getAccessToken } from "@/lib/gmail/connection";
 import { parseMessage } from "@/lib/gmail/parse";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Pull recent INBOX messages for a business's connected mailbox and store any
- * not seen before. Idempotent: the unique (business_id, gmail_message_id)
- * constraint means a message is stored at most once even under a race — a
- * duplicate insert is counted as skipped, never an error. RLS scopes every
- * write to the caller's business.
+ * not seen before. Messages are written with the SERVICE ROLE (users have no
+ * INSERT on this table — they cannot forge inbound/outbound mail), so this must
+ * only be called after the caller has authorized the business. Idempotent: the
+ * unique (business_id, gmail_message_id) constraint means a message is stored at
+ * most once even under a race — a duplicate insert is counted as skipped.
  */
-
-type Db = SupabaseClient<Database>;
 
 export type SyncResult = { fetched: number; stored: number; skipped: number };
 
-export async function syncInbox(
-  supabase: Db,
-  businessId: string,
-  opts: { maxResults?: number } = {},
-): Promise<SyncResult> {
-  const accessToken = await getAccessToken(supabase, businessId);
+export async function syncInbox(businessId: string, opts: { maxResults?: number } = {}): Promise<SyncResult> {
+  const db = createAdminClient();
+  if (!db) throw new Error("Inbox sync requires SUPABASE_SERVICE_ROLE_KEY to be configured.");
+
+  const accessToken = await getAccessToken(businessId);
   const list = await listInboxMessages(accessToken, { maxResults: opts.maxResults ?? 25 });
   const ids = (list.messages ?? []).map((m) => m.id);
 
@@ -32,7 +28,7 @@ export async function syncInbox(
   let skipped = 0;
 
   for (const id of ids) {
-    const { data: existing } = await supabase
+    const { data: existing } = await db
       .from("business_email_messages")
       .select("id")
       .eq("business_id", businessId)
@@ -44,7 +40,7 @@ export async function syncInbox(
     }
 
     const parsed = parseMessage(await getMessage(accessToken, id, "full"));
-    const { error } = await supabase.from("business_email_messages").insert({
+    const { error } = await db.from("business_email_messages").insert({
       business_id: businessId,
       gmail_message_id: parsed.id,
       gmail_thread_id: parsed.threadId,
@@ -60,8 +56,7 @@ export async function syncInbox(
       internal_date: parsed.date,
       label_ids: parsed.labelIds,
     });
-    // A unique-violation here means a concurrent sync already stored it.
-    if (error) skipped++;
+    if (error) skipped++; // unique violation = a concurrent sync already stored it
     else stored++;
   }
 
