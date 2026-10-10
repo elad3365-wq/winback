@@ -18,12 +18,12 @@ results.
 | Phase | Area | Status | Notes |
 |---|---|---|---|
 | 1 | Audit & verify | ✅ done (this session) | Findings below. Baseline: `tsc` clean, 13/13 unit tests pass. |
-| 2 | Preview env → WinBack-Test | ⛔ blocked on user | Needs Vercel Preview env vars + Supabase redirect URLs + (for Gmail) a Google OAuth client. Exact actions listed below. |
+| 2 | Preview env → WinBack-Test | 🟡 guide ready, awaiting user | `docs/PREVIEW_SETUP.md` has exact Vercel/Supabase steps + an isolation-verification checklist. One new finding: WinBack-Test must have **Confirm email OFF** for automated E2E. Applying the settings is the user's action. |
 | 3 | Customer app workflows | 🟡 ~80% built | Auth, onboarding, CRM, leads, notes/activity, AI drafts, approval all exist. Gaps: see below. |
-| 4 | AI system | 🟡 in progress | Anthropic wired. **Model fixed to cost-efficient + configurable (this session).** Provider layer (GPT/Gemini) evaluated — deferred, Claude-only MVP. |
+| 4 | AI system | 🟡 in progress | Anthropic wired. **Model fixed to cost-efficient + configurable.** Guardrails now unit-tested. Provider layer (GPT/Gemini) deferred — Claude-only MVP. |
 | 5 | Per-business Gmail | ❌ not built | Net-new. Needs migration (approval-gated) + Google OAuth client (user). Code will land behind a feature flag. |
-| 6 | Safe automation | 🟡 ~85% built | Cron is idempotent, draft-only, stop-states, audit log. "Cancel on customer reply" depends on Phase 5 inbound. |
-| 7 | End-to-end testing | ⬜ pending | Unit tests added incrementally; full E2E needs Preview + Gmail. |
+| 6 | Safe automation | 🟡 ~85% built | Cron is idempotent, draft-only, stop-states, audit log; delay/business-hours logic now unit-tested. "Cancel on customer reply" depends on Phase 5 inbound. |
+| 7 | End-to-end testing | 🟡 scaffolded | Vitest unit suite expanded to **44 tests** (guardrails, scheduling). Playwright E2E specs written (signup→onboarding, lead→AI draft→approve, tenant isolation), parameterized by `E2E_BASE_URL`; run once Preview is up. |
 | 8 | Pilot prep | ⬜ pending | Checklist + readiness report at the end. |
 
 ## Phase 1 — audit findings (verified by reading the code)
@@ -108,3 +108,12 @@ exact steps; other independent dev proceeds meanwhile.
   Phase 1 audit complete; Phase 4 increment — cost-efficient, configurable
   follow-up model (`lib/ai/models.ts`, wired into `lib/ai/anthropic.ts`, env
   documented, unit-tested).
+- _This session (milestone 2, Phase 2/7)_: expanded Vitest suite 13 → **44**
+  tests — AI discount guardrails + prompt builder (`followup.test.ts`),
+  business-hours gate (`business-hours.test.ts`), autopilot delays/guards
+  (`autopilot.test.ts`); all green, no bugs surfaced. Added Playwright E2E:
+  `playwright.config.ts`, `e2e/fixtures.ts`, specs for signup→onboarding,
+  lead→AI draft→approval, and tenant isolation (parameterized by
+  `E2E_BASE_URL`; skip when unset; 4 tests discovered). `npm run e2e` script
+  added, `@playwright/test@1.56.0` devDep. Wrote `docs/PREVIEW_SETUP.md`
+  (Phase 2 setup + isolation verification) and `e2e/README.md`.
