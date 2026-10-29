@@ -17,6 +17,9 @@ type ParsedLead = {
   estimate_amount: number;
   status: LeadStatus;
   follow_up_date: string | null;
+  // Present only when the form set or cleared an email, so saving a lead keeps
+  // working on a database that has not run migration 0012 yet.
+  email?: string | null;
 };
 
 function readString(formData: FormData, key: string) {
@@ -46,6 +49,13 @@ function parseLeadForm(formData: FormData): ParsedLead | { error: string } {
     return { error: "Follow-up date must be a valid date." };
   }
 
+  const email = readString(formData, "email").toLowerCase();
+  if (email && (email.length > 320 || !/^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/.test(email))) {
+    return { error: "Enter a valid email address, or leave it empty." };
+  }
+  const emailField =
+    email || formData.get("had_email") === "1" ? { email: email || null } : {};
+
   return {
     customer_name: customerName,
     phone,
@@ -53,6 +63,7 @@ function parseLeadForm(formData: FormData): ParsedLead | { error: string } {
     estimate_amount: Math.round(amount * 100) / 100,
     status: statusRaw,
     follow_up_date: followUpDate || null,
+    ...emailField,
   };
 }
 
