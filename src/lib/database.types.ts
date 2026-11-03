@@ -38,6 +38,15 @@ export type EmailDirection = "inbound" | "outbound";
 /** Lifecycle of an AI-drafted email reply (draft → approved → sent). */
 export type GmailReplyStatus = "draft" | "edited" | "approved" | "sent" | "cancelled";
 
+/** Per-business AI autonomy level (DB check constraint). */
+export type AutonomyLevelDb = "off" | "assist" | "draft" | "autopilot";
+
+/** Lifecycle of a queued AI task. */
+export type AiTaskStatus = "queued" | "running" | "done" | "failed" | "dead";
+
+/** Kind of verified business-memory entry. */
+export type BusinessKnowledgeKind = "faq" | "fact" | "policy" | "instruction";
+
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
@@ -513,6 +522,103 @@ export type Database = {
         };
         Relationships: [];
       };
+      business_ai_autonomy: {
+        Row: {
+          business_id: string;
+          level: AutonomyLevelDb;
+          emergency_stop: boolean;
+          daily_action_limit: number;
+          daily_spend_limit_usd: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          business_id: string;
+          level?: AutonomyLevelDb;
+          emergency_stop?: boolean;
+          daily_action_limit?: number;
+          daily_spend_limit_usd?: number;
+        };
+        Update: {
+          level?: AutonomyLevelDb;
+          emergency_stop?: boolean;
+          daily_action_limit?: number;
+          daily_spend_limit_usd?: number;
+        };
+        Relationships: [];
+      };
+      ai_tasks: {
+        Row: {
+          id: string;
+          business_id: string;
+          type: string;
+          status: AiTaskStatus;
+          priority: number;
+          run_after: string;
+          attempts: number;
+          max_attempts: number;
+          dedupe_key: string;
+          payload: Json | null;
+          last_error: string | null;
+          locked_at: string | null;
+          lead_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          type: string;
+          status?: AiTaskStatus;
+          priority?: number;
+          run_after?: string;
+          attempts?: number;
+          max_attempts?: number;
+          dedupe_key: string;
+          payload?: Json | null;
+          last_error?: string | null;
+          locked_at?: string | null;
+          lead_id?: string | null;
+        };
+        Update: {
+          status?: AiTaskStatus;
+          priority?: number;
+          run_after?: string;
+          attempts?: number;
+          last_error?: string | null;
+          locked_at?: string | null;
+        };
+        Relationships: [];
+      };
+      business_knowledge: {
+        Row: {
+          id: string;
+          business_id: string;
+          kind: BusinessKnowledgeKind;
+          title: string | null;
+          content: string;
+          approved: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          kind?: BusinessKnowledgeKind;
+          title?: string | null;
+          content: string;
+          approved?: boolean;
+          created_by?: string | null;
+        };
+        Update: {
+          kind?: BusinessKnowledgeKind;
+          title?: string | null;
+          content?: string;
+          approved?: boolean;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -543,3 +649,6 @@ export type LeadActivity = Database["public"]["Tables"]["lead_activity"]["Row"];
 export type BusinessGmailConnection = Database["public"]["Tables"]["business_gmail_connections"]["Row"];
 export type BusinessEmailMessage = Database["public"]["Tables"]["business_email_messages"]["Row"];
 export type BusinessEmailReply = Database["public"]["Tables"]["business_email_replies"]["Row"];
+export type BusinessAiAutonomy = Database["public"]["Tables"]["business_ai_autonomy"]["Row"];
+export type AiTask = Database["public"]["Tables"]["ai_tasks"]["Row"];
+export type BusinessKnowledge = Database["public"]["Tables"]["business_knowledge"]["Row"];

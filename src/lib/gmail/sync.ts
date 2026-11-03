@@ -1,5 +1,7 @@
 import "server-only";
 
+import { enqueueTask } from "@/lib/ai/autopilot/store";
+import { dedupeKey } from "@/lib/ai/autopilot/supervisor";
 import { getMessage, listInboxMessages } from "@/lib/gmail/api";
 import { getAccessToken } from "@/lib/gmail/connection";
 import { parseMessage } from "@/lib/gmail/parse";
@@ -40,24 +42,47 @@ export async function syncInbox(businessId: string, opts: { maxResults?: number 
     }
 
     const parsed = parseMessage(await getMessage(accessToken, id, "full"));
-    const { error } = await db.from("business_email_messages").insert({
-      business_id: businessId,
-      gmail_message_id: parsed.id,
-      gmail_thread_id: parsed.threadId,
-      direction: "inbound",
-      from_address: parsed.fromAddress,
-      to_addresses: parsed.to,
-      subject: parsed.subject,
-      snippet: parsed.snippet,
-      body_text: parsed.bodyText,
-      rfc822_message_id: parsed.rfc822MessageId,
-      in_reply_to: parsed.inReplyTo,
-      email_references: parsed.references,
-      internal_date: parsed.date,
-      label_ids: parsed.labelIds,
-    });
-    if (error) skipped++; // unique violation = a concurrent sync already stored it
-    else stored++;
+    const { data: inserted, error } = await db
+      .from("business_email_messages")
+      .insert({
+        business_id: businessId,
+        gmail_message_id: parsed.id,
+        gmail_thread_id: parsed.threadId,
+        direction: "inbound",
+        from_address: parsed.fromAddress,
+        to_addresses: parsed.to,
+        subject: parsed.subject,
+        snippet: parsed.snippet,
+        body_text: parsed.bodyText,
+        rfc822_message_id: parsed.rfc822MessageId,
+        in_reply_to: parsed.inReplyTo,
+        email_references: parsed.references,
+        internal_date: parsed.date,
+        label_ids: parsed.labelIds,
+      })
+      .select("id")
+      .maybeSingle();
+    if (error || !inserted) {
+      skipped++; // unique violation = a concurrent sync already stored it
+      continue;
+    }
+    stored++;
+
+    // Hand the new inbound message to the AI Autopilot queue (idempotent per
+    // message). Best-effort: if the queue table isn't present yet, or anything
+    // fails, the message is still stored — the AI step just doesn't run.
+    try {
+      await enqueueTask({
+        businessId,
+        type: "inbound_email",
+        dedupeKey: dedupeKey({ businessId, type: "inbound_email", entityId: inserted.id }),
+        payload: { messageId: inserted.id },
+        priority: 70,
+        leadId: null,
+      });
+    } catch {
+      // non-fatal
+    }
   }
 
   return { fetched: ids.length, stored, skipped };
