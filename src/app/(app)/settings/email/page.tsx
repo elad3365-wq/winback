@@ -2,10 +2,11 @@ import Link from "next/link";
 
 import { EmailConnection } from "@/components/settings/email-connection";
 import { EmailInbox, type InboxItem } from "@/components/settings/email-inbox";
+import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { requireOnboardedContext } from "@/lib/business";
 import type { BusinessEmailReply } from "@/lib/database.types";
-import { isGmailFeatureEnabled } from "@/lib/gmail/config";
+import { gmailRuntimeWarnings, isGmailFeatureEnabled } from "@/lib/gmail/config";
 import { getConnectionStatus } from "@/lib/gmail/connection";
 import { createClient } from "@/lib/supabase/server";
 
@@ -108,6 +109,12 @@ export default async function EmailSettingsPage({
           Your business inbox. WinBack drafts replies for you to review — nothing is ever sent without your approval.
         </p>
       </header>
+
+      {gmailRuntimeWarnings().map((w) => (
+        <Alert key={w} tone="info">
+          {w}
+        </Alert>
+      ))}
 
       <EmailConnection
         status={status}

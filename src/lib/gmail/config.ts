@@ -83,3 +83,23 @@ export function gmailConfig(): GmailConfig {
 export function isGmailFeatureEnabled(): boolean {
   return process.env.WINBACK_GMAIL_ENABLED?.trim() === "true" && isGmailConfigured();
 }
+
+/**
+ * Runtime dependencies the Gmail flow needs once enabled, beyond the OAuth vars:
+ * the service-role key (token read/write, inbox sync, mark-sent all run through
+ * it) and the Anthropic key (reply drafting). Returns human-readable warnings
+ * for whatever is missing — names only, never values — so the settings UI can
+ * tell the owner exactly what to finish instead of failing cryptically.
+ */
+export function gmailRuntimeWarnings(): string[] {
+  const warnings: string[] = [];
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    warnings.push(
+      "SUPABASE_SERVICE_ROLE_KEY is not set — connecting Gmail, syncing the inbox, and recording sends will fail until it is added (server-only).",
+    );
+  }
+  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
+    warnings.push("ANTHROPIC_API_KEY is not set — AI reply drafting is disabled until it is added (server-only).");
+  }
+  return warnings;
+}
