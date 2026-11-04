@@ -47,6 +47,12 @@ describe("buildReplyPrompt", () => {
     expect(system).toContain("DRAFT the business owner will review");
   });
 
+  it("includes verified business knowledge when provided", () => {
+    const { user } = buildReplyPrompt(inputs({ knowledge: ["We warranty all roofs for 10 years.", "We serve Miami-Dade only."] }));
+    expect(user).toContain("Verified business knowledge you may use:");
+    expect(user).toContain("- We warranty all roofs for 10 years.");
+  });
+
   it("includes linked-lead facts when present", () => {
     const { user } = buildReplyPrompt(
       inputs({ lead: { customerName: "Dana Lopez", service: "roof replacement", estimateAmount: 8200 } }),

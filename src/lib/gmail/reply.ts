@@ -27,6 +27,8 @@ export type ReplyInputs = {
   inbound: { fromName: string | null; subject: string | null; bodyText: string };
   /** Optional linked lead for extra grounding (the estimate they received). */
   lead: { customerName: string; service: string; estimateAmount: number } | null;
+  /** Verified business-memory entries (FAQ / approved facts) the AI may cite. */
+  knowledge?: string[];
 };
 
 const TONE_INSTRUCTIONS: Record<AiTone, string> = {
@@ -101,6 +103,9 @@ export function buildReplyPrompt(inputs: ReplyInputs): { system: string; user: s
     inputs.businessHours?.trim() ? `Business hours: ${inputs.businessHours.trim()}` : null,
     inputs.additionalRules?.trim() ? `Additional business rules to honour: ${inputs.additionalRules.trim()}` : null,
     ...leadFacts,
+    ...(inputs.knowledge && inputs.knowledge.length > 0
+      ? ["Verified business knowledge you may use:", ...inputs.knowledge.map((k) => `- ${k}`)]
+      : []),
   ]
     .filter(Boolean)
     .join("\n");

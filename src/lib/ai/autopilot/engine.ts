@@ -2,6 +2,9 @@ import "server-only";
 
 import { decideNextAction, type LeadFacts } from "@/lib/ai/autopilot/orchestrator-core";
 import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "@/lib/ai/autopilot/autonomy";
+import { crmUpdateForInbound } from "@/lib/ai/autopilot/crm";
+import { estimateDraftCostUsd, withinActionLimit, withinSpendLimit } from "@/lib/ai/autopilot/limits";
+import { resolveFollowupModel } from "@/lib/ai/models";
 import type { AiTask, Json } from "@/lib/database.types";
 import { generateReply, type ReplyInputs } from "@/lib/gmail/reply";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -20,17 +23,39 @@ function adminDb() {
   return a;
 }
 
-async function loadAutonomy(businessId: string): Promise<{ level: AutonomyLevel; emergencyStop: boolean }> {
+type AutopilotConfig = {
+  level: AutonomyLevel;
+  emergencyStop: boolean;
+  dailyActionLimit: number;
+  dailySpendLimitUsd: number;
+};
+
+async function loadAutonomy(businessId: string): Promise<AutopilotConfig> {
   const { data } = await adminDb()
     .from("business_ai_autonomy")
-    .select("level, emergency_stop")
+    .select("level, emergency_stop, daily_action_limit, daily_spend_limit_usd")
     .eq("business_id", businessId)
     .maybeSingle();
-  if (!data) return { level: DEFAULT_AUTONOMY_LEVEL, emergencyStop: false };
+  if (!data) return { level: DEFAULT_AUTONOMY_LEVEL, emergencyStop: false, dailyActionLimit: 200, dailySpendLimitUsd: 5 };
   return {
     level: isAutonomyLevel(data.level) ? data.level : DEFAULT_AUTONOMY_LEVEL,
     emergencyStop: Boolean(data.emergency_stop),
+    dailyActionLimit: Number(data.daily_action_limit ?? 200),
+    dailySpendLimitUsd: Number(data.daily_spend_limit_usd ?? 5),
   };
+}
+
+/** Count today's autopilot drafts for a business (for rate/spend enforcement). */
+async function draftsToday(businessId: string): Promise<number> {
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  const { count } = await adminDb()
+    .from("ai_audit_log")
+    .select("id", { count: "exact", head: true })
+    .eq("business_id", businessId)
+    .eq("event", "autopilot_reply_drafted")
+    .gte("created_at", start.toISOString());
+  return count ?? 0;
 }
 
 function daysSince(iso: string | null): number {
@@ -133,6 +158,28 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
     .maybeSingle();
   if (existing) return { result: "skipped", detail: "Active draft already exists." };
 
+  // Per-business rate + AI-spend limits (Phase 3): stop before paying for a draft
+  // once today's caps are reached.
+  const usedToday = await draftsToday(businessId);
+  const estCost = estimateDraftCostUsd(resolveFollowupModel());
+  if (!withinActionLimit(usedToday, autonomy.dailyActionLimit)) {
+    await audit("autopilot_rate_limited", { message_id: messageId, used_today: usedToday, limit: autonomy.dailyActionLimit });
+    return { result: "skipped", detail: "Daily action limit reached." };
+  }
+  if (!withinSpendLimit(usedToday * estCost, estCost, autonomy.dailySpendLimitUsd)) {
+    await audit("autopilot_spend_limited", { message_id: messageId, limit_usd: autonomy.dailySpendLimitUsd });
+    return { result: "skipped", detail: "Daily AI spend limit reached." };
+  }
+
+  // Verified business memory (Phase 4): approved knowledge the AI may cite.
+  const { data: knowledgeRows } = await db
+    .from("business_knowledge")
+    .select("title, content")
+    .eq("business_id", businessId)
+    .eq("approved", true)
+    .limit(25);
+  const knowledge = (knowledgeRows ?? []).map((k) => (k.title ? `${k.title}: ${k.content}` : k.content));
+
   const inputs: ReplyInputs = {
     businessName: business.name,
     businessType: business.business_type ?? business.custom_business_type ?? null,
@@ -146,6 +193,7 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
     currency: business.currency || "USD",
     inbound: { fromName: message.from_address, subject: message.subject, bodyText: message.body_text ?? message.snippet ?? "" },
     lead: lead ? { customerName: lead.customer_name, service: lead.service, estimateAmount: Number(lead.estimate_amount) || 0 } : null,
+    knowledge,
   };
 
   const generated = await generateReply(inputs);
@@ -168,6 +216,21 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
     })
     .select("id")
     .maybeSingle();
+
+  // CRM auto-update (Phase 2): advance the lead stage from detected intent and
+  // pause its follow-up sequence (the customer engaged). Internal action only.
+  if (lead && message.lead_id) {
+    const crm = crmUpdateForInbound({ intent: decision.intent ?? "low", currentStatus: lead.status });
+    if (Object.keys(crm).length > 0) {
+      await db.from("leads").update(crm).eq("id", message.lead_id).eq("business_id", businessId);
+      await db.from("lead_activity").insert({
+        business_id: businessId,
+        lead_id: message.lead_id,
+        type: "autopilot_crm_update",
+        metadata: { message_id: messageId, intent: decision.intent ?? "low", ...crm },
+      });
+    }
+  }
 
   await audit("autopilot_reply_drafted", { message_id: messageId, reply_id: saved?.id ?? null });
   return { result: "drafted", detail: saved?.id };
