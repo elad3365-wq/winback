@@ -405,6 +405,9 @@ export type Database = {
           scope: string | null;
           history_id: string | null;
           watch_expiration: string | null;
+          watch_topic: string | null;
+          watch_last_renewed_at: string | null;
+          last_synced_at: string | null;
           connected_by: string | null;
           revoked_at: string | null;
           created_at: string;
@@ -419,6 +422,9 @@ export type Database = {
           scope?: string | null;
           history_id?: string | null;
           watch_expiration?: string | null;
+          watch_topic?: string | null;
+          watch_last_renewed_at?: string | null;
+          last_synced_at?: string | null;
           connected_by?: string | null;
           revoked_at?: string | null;
         };
@@ -430,6 +436,9 @@ export type Database = {
           scope?: string | null;
           history_id?: string | null;
           watch_expiration?: string | null;
+          watch_topic?: string | null;
+          watch_last_renewed_at?: string | null;
+          last_synced_at?: string | null;
           revoked_at?: string | null;
         };
         Relationships: [];
@@ -529,6 +538,7 @@ export type Database = {
           emergency_stop: boolean;
           daily_action_limit: number;
           daily_spend_limit_usd: number;
+          autopilot_send_authorized: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -538,12 +548,14 @@ export type Database = {
           emergency_stop?: boolean;
           daily_action_limit?: number;
           daily_spend_limit_usd?: number;
+          autopilot_send_authorized?: boolean;
         };
         Update: {
           level?: AutonomyLevelDb;
           emergency_stop?: boolean;
           daily_action_limit?: number;
           daily_spend_limit_usd?: number;
+          autopilot_send_authorized?: boolean;
         };
         Relationships: [];
       };

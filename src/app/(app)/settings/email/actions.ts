@@ -4,18 +4,16 @@ import { revalidatePath } from "next/cache";
 
 import { requireBusinessContext } from "@/lib/business";
 import type { GmailReplyStatus } from "@/lib/database.types";
-import { sendRawMessage } from "@/lib/gmail/api";
 import { isGmailFeatureEnabled } from "@/lib/gmail/config";
-import { disconnect, getAccessToken } from "@/lib/gmail/connection";
-import { buildRawReply, buildReferences, replySubject } from "@/lib/gmail/parse";
+import { disconnect } from "@/lib/gmail/connection";
 import {
   inboundReplyReason,
   isUnsubscribeRequest,
   leadUpdateForInboundReply,
 } from "@/lib/gmail/reply-detection";
 import { generateReply, type ReplyInputs } from "@/lib/gmail/reply";
+import { sendApprovedReply } from "@/lib/gmail/send";
 import { syncInbox } from "@/lib/gmail/sync";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -266,69 +264,16 @@ export async function cancelReplyAction(replyId: string): Promise<ActionResult> 
 export async function sendReplyAction(replyId: string): Promise<ActionResult> {
   const disabled = ensureEnabled();
   if (disabled) return { error: disabled };
-  if (process.env.WINBACK_GMAIL_ALLOW_SEND?.trim() !== "true") {
-    return { error: "Sending is disabled in this environment (WINBACK_GMAIL_ALLOW_SEND is not on)." };
-  }
 
   const { user, business } = await requireBusinessContext();
   if (business.owner_id !== user.id) return { error: "Only the business owner can send." };
-  const supabase = await createClient();
 
-  const { data: reply } = await supabase
-    .from("business_email_replies")
-    .select("*")
-    .eq("id", replyId)
-    .eq("business_id", business.id)
-    .maybeSingle();
-  if (!reply) return { error: "Reply not found." };
-  if (reply.status !== "approved") return { error: "Only an approved reply can be sent." };
-
-  const { data: message } = await supabase
-    .from("business_email_messages")
-    .select("*")
-    .eq("id", reply.message_id)
-    .eq("business_id", business.id)
-    .maybeSingle();
-  if (!message) return { error: "Original message not found." };
-
-  const { data: connection } = await supabase
-    .from("business_gmail_connections")
-    .select("google_account_email")
-    .eq("business_id", business.id)
-    .maybeSingle();
-  if (!connection) return { error: "Gmail is not connected." };
-
-  const to = message.from_address;
-  if (!to) return { error: "The original message has no sender address to reply to." };
-
-  const raw = buildRawReply({
-    from: connection.google_account_email,
-    to: [to],
-    subject: replySubject(message.subject),
-    inReplyTo: message.rfc822_message_id,
-    references: buildReferences(message.email_references, message.rfc822_message_id),
-    body: reply.body,
-  });
-
-  let sentMessageId: string;
-  try {
-    const accessToken = await getAccessToken(business.id);
-    const result = await sendRawMessage(accessToken, raw, message.gmail_thread_id ?? undefined);
-    sentMessageId = result.id;
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Sending failed." };
-  }
-
-  // Mark sent AFTER Gmail confirms, via the SERVICE ROLE — users cannot set the
-  // send fields (migration 0011). This is the only path that marks a reply sent.
-  const admin = createAdminClient();
-  if (!admin) return { error: "Sent, but cannot record it: SUPABASE_SERVICE_ROLE_KEY is not configured." };
-  const { error: updErr } = await admin
-    .from("business_email_replies")
-    .update({ status: "sent", sent_at: new Date().toISOString(), gmail_sent_message_id: sentMessageId })
-    .eq("id", replyId)
-    .eq("business_id", business.id);
-  if (updErr) return { error: `Sent, but could not record it: ${updErr.message}` };
+  // The reply must already be approved (owner approved it via the UI, enforced
+  // by the DB trigger). Sending itself — the WINBACK_GMAIL_ALLOW_SEND gate, the
+  // Gmail call, and the service-role mark-sent — runs through the single shared
+  // send path so manual and autonomous sends behave identically.
+  const result = await sendApprovedReply({ businessId: business.id, replyId });
+  if (!result.ok) return { error: result.error };
 
   revalidatePath("/settings/email");
   return { ok: true };

@@ -5,7 +5,7 @@
       "schedule": "0 9 * * *"
     },
     {
-      "path": "/api/cron/ai-tasks",
+      "path": "/api/cron/gmail-maintenance",
       "schedule": "15 9 * * *"
     }
   ]

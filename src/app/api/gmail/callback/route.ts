@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getProfile } from "@/lib/gmail/api";
-import { gmailConfig, isGmailFeatureEnabled } from "@/lib/gmail/config";
+import { gmailConfig, isGmailFeatureEnabled, isGmailPushConfigured } from "@/lib/gmail/config";
 import { storeConnection } from "@/lib/gmail/connection";
 import { exchangeCodeForTokens } from "@/lib/gmail/oauth";
 import { verifyState } from "@/lib/gmail/oauth-state";
+import { startWatch } from "@/lib/gmail/watch";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -67,6 +68,15 @@ export async function GET(request: NextRequest) {
       email: profile.emailAddress,
       tokens,
     });
+    // Begin real-time push immediately (best-effort — if Pub/Sub isn't
+    // configured or watch fails, the daily maintenance cron still reconciles).
+    if (isGmailPushConfigured()) {
+      try {
+        await startWatch(business.id);
+      } catch {
+        // non-fatal: reconciliation cron covers it
+      }
+    }
   } catch {
     return redirectToSettings(request, { gmail_error: "exchange_failed" });
   }

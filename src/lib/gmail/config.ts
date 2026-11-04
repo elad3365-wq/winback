@@ -85,6 +85,33 @@ export function isGmailFeatureEnabled(): boolean {
 }
 
 /**
+ * Gmail Push (Google Cloud Pub/Sub) config. Optional: when both the topic and
+ * the shared webhook token are present, the mailbox is watched (users.watch) and
+ * Pub/Sub POSTs real-time notifications to /api/gmail/push?token=…. Without them
+ * the system still works via the daily maintenance cron (reconciliation), just
+ * not in real time.
+ *   GMAIL_PUBSUB_TOPIC — the full topic name, e.g.
+ *     "projects/<gcp-project>/topics/winback-gmail-push". The Gmail service
+ *     account (gmail-api-push@system.gserviceaccount.com) must have Pub/Sub
+ *     Publisher on it.
+ *   GMAIL_PUSH_TOKEN   — a high-entropy shared secret. The Pub/Sub push
+ *     subscription's endpoint must carry it as `?token=<value>`; the webhook
+ *     rejects any request without an exact match (server-only, never public).
+ */
+export function gmailPushTopic(): string {
+  return process.env.GMAIL_PUBSUB_TOPIC?.trim() ?? "";
+}
+
+export function gmailPushToken(): string {
+  return process.env.GMAIL_PUSH_TOKEN?.trim() ?? "";
+}
+
+/** True when real-time push (watch + authenticated webhook) can operate. */
+export function isGmailPushConfigured(): boolean {
+  return Boolean(gmailPushTopic() && gmailPushToken());
+}
+
+/**
  * Runtime dependencies the Gmail flow needs once enabled, beyond the OAuth vars:
  * the service-role key (token read/write, inbox sync, mark-sent all run through
  * it) and the Anthropic key (reply drafting). Returns human-readable warnings

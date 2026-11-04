@@ -23,31 +23,38 @@ function adminDb(): Db {
   return a;
 }
 
-export type AutonomyState = { level: AutonomyLevel; emergencyStop: boolean };
+export type AutonomyState = { level: AutonomyLevel; emergencyStop: boolean; sendAuthorized: boolean };
 
 /** Current autonomy for a business; defaults to DRAFT (never silently upgraded). */
 export async function getAutonomy(userClient: Db, businessId: string): Promise<AutonomyState> {
   const { data } = await userClient
     .from("business_ai_autonomy")
-    .select("level, emergency_stop")
+    .select("level, emergency_stop, autopilot_send_authorized")
     .eq("business_id", businessId)
     .maybeSingle();
-  if (!data) return { level: DEFAULT_AUTONOMY_LEVEL, emergencyStop: false };
+  if (!data) return { level: DEFAULT_AUTONOMY_LEVEL, emergencyStop: false, sendAuthorized: false };
   return {
     level: isAutonomyLevel(data.level) ? data.level : DEFAULT_AUTONOMY_LEVEL,
     emergencyStop: Boolean(data.emergency_stop),
+    sendAuthorized: Boolean(data.autopilot_send_authorized),
   };
 }
 
-/** Owner updates autonomy level and/or the emergency-stop switch (RLS owner-only). */
+/** Owner updates autonomy level, emergency-stop, and/or send authorization (RLS owner-only). */
 export async function setAutonomy(
   userClient: Db,
   businessId: string,
-  patch: { level?: AutonomyLevel; emergencyStop?: boolean },
+  patch: { level?: AutonomyLevel; emergencyStop?: boolean; sendAuthorized?: boolean },
 ): Promise<void> {
-  const row: { business_id: string; level?: AutonomyLevel; emergency_stop?: boolean } = { business_id: businessId };
+  const row: {
+    business_id: string;
+    level?: AutonomyLevel;
+    emergency_stop?: boolean;
+    autopilot_send_authorized?: boolean;
+  } = { business_id: businessId };
   if (patch.level !== undefined) row.level = patch.level;
   if (patch.emergencyStop !== undefined) row.emergency_stop = patch.emergencyStop;
+  if (patch.sendAuthorized !== undefined) row.autopilot_send_authorized = patch.sendAuthorized;
   const { error } = await userClient.from("business_ai_autonomy").upsert(row, { onConflict: "business_id" });
   if (error) throw new Error(error.message);
 }

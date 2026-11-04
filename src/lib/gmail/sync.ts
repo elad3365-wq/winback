@@ -1,19 +1,19 @@
 import "server-only";
 
-import { enqueueTask } from "@/lib/ai/autopilot/store";
-import { dedupeKey } from "@/lib/ai/autopilot/supervisor";
-import { getMessage, listInboxMessages } from "@/lib/gmail/api";
+import { listInboxMessages } from "@/lib/gmail/api";
 import { getAccessToken } from "@/lib/gmail/connection";
-import { parseMessage } from "@/lib/gmail/parse";
+import { ingestMessage } from "@/lib/gmail/ingest";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Pull recent INBOX messages for a business's connected mailbox and store any
- * not seen before. Messages are written with the SERVICE ROLE (users have no
- * INSERT on this table — they cannot forge inbound/outbound mail), so this must
- * only be called after the caller has authorized the business. Idempotent: the
- * unique (business_id, gmail_message_id) constraint means a message is stored at
- * most once even under a race — a duplicate insert is counted as skipped.
+ * not seen before (via the shared, loop-safe `ingestMessage`). Written with the
+ * SERVICE ROLE, so this must only run after the caller has authorized the
+ * business. Idempotent: a message is stored at most once even under a race.
+ *
+ * This is the reliable FALLBACK path — the push/history path is the real-time
+ * one, and the daily maintenance cron calls history reconciliation which seeds
+ * itself from here on first run.
  */
 
 export type SyncResult = { fetched: number; stored: number; skipped: number };
@@ -22,67 +22,22 @@ export async function syncInbox(businessId: string, opts: { maxResults?: number 
   const db = createAdminClient();
   if (!db) throw new Error("Inbox sync requires SUPABASE_SERVICE_ROLE_KEY to be configured.");
 
+  const { data: conn } = await db
+    .from("business_gmail_connections")
+    .select("google_account_email")
+    .eq("business_id", businessId)
+    .maybeSingle();
+
   const accessToken = await getAccessToken(businessId);
   const list = await listInboxMessages(accessToken, { maxResults: opts.maxResults ?? 25 });
   const ids = (list.messages ?? []).map((m) => m.id);
 
   let stored = 0;
   let skipped = 0;
-
   for (const id of ids) {
-    const { data: existing } = await db
-      .from("business_email_messages")
-      .select("id")
-      .eq("business_id", businessId)
-      .eq("gmail_message_id", id)
-      .maybeSingle();
-    if (existing) {
-      skipped++;
-      continue;
-    }
-
-    const parsed = parseMessage(await getMessage(accessToken, id, "full"));
-    const { data: inserted, error } = await db
-      .from("business_email_messages")
-      .insert({
-        business_id: businessId,
-        gmail_message_id: parsed.id,
-        gmail_thread_id: parsed.threadId,
-        direction: "inbound",
-        from_address: parsed.fromAddress,
-        to_addresses: parsed.to,
-        subject: parsed.subject,
-        snippet: parsed.snippet,
-        body_text: parsed.bodyText,
-        rfc822_message_id: parsed.rfc822MessageId,
-        in_reply_to: parsed.inReplyTo,
-        email_references: parsed.references,
-        internal_date: parsed.date,
-        label_ids: parsed.labelIds,
-      })
-      .select("id")
-      .maybeSingle();
-    if (error || !inserted) {
-      skipped++; // unique violation = a concurrent sync already stored it
-      continue;
-    }
-    stored++;
-
-    // Hand the new inbound message to the AI Autopilot queue (idempotent per
-    // message). Best-effort: if the queue table isn't present yet, or anything
-    // fails, the message is still stored — the AI step just doesn't run.
-    try {
-      await enqueueTask({
-        businessId,
-        type: "inbound_email",
-        dedupeKey: dedupeKey({ businessId, type: "inbound_email", entityId: inserted.id }),
-        payload: { messageId: inserted.id },
-        priority: 70,
-        leadId: null,
-      });
-    } catch {
-      // non-fatal
-    }
+    const outcome = await ingestMessage(db, businessId, accessToken, id, conn?.google_account_email ?? null);
+    if (outcome === "stored") stored++;
+    else skipped++;
   }
 
   return { fetched: ids.length, stored, skipped };

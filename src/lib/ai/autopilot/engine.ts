@@ -4,9 +4,17 @@ import { decideNextAction, type LeadFacts } from "@/lib/ai/autopilot/orchestrato
 import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "@/lib/ai/autopilot/autonomy";
 import { crmUpdateForInbound } from "@/lib/ai/autopilot/crm";
 import { estimateDraftCostUsd, withinActionLimit, withinSpendLimit } from "@/lib/ai/autopilot/limits";
+import { validateOutboundDraft } from "@/lib/ai/autopilot/supervisor";
 import { resolveFollowupModel } from "@/lib/ai/models";
 import type { AiTask, Json } from "@/lib/database.types";
-import { generateReply, type ReplyInputs } from "@/lib/gmail/reply";
+import {
+  decideAutoSend,
+  isAutomatedSender,
+  isSensitiveInbound,
+  replyDefersToHuman,
+} from "@/lib/gmail/autosend";
+import { generateReply, replyDiscountsAllowed, type ReplyInputs } from "@/lib/gmail/reply";
+import { sendApprovedReply, sendingAllowedGlobally } from "@/lib/gmail/send";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -28,20 +36,24 @@ type AutopilotConfig = {
   emergencyStop: boolean;
   dailyActionLimit: number;
   dailySpendLimitUsd: number;
+  sendAuthorized: boolean;
 };
 
 async function loadAutonomy(businessId: string): Promise<AutopilotConfig> {
   const { data } = await adminDb()
     .from("business_ai_autonomy")
-    .select("level, emergency_stop, daily_action_limit, daily_spend_limit_usd")
+    .select("level, emergency_stop, daily_action_limit, daily_spend_limit_usd, autopilot_send_authorized")
     .eq("business_id", businessId)
     .maybeSingle();
-  if (!data) return { level: DEFAULT_AUTONOMY_LEVEL, emergencyStop: false, dailyActionLimit: 200, dailySpendLimitUsd: 5 };
+  if (!data) {
+    return { level: DEFAULT_AUTONOMY_LEVEL, emergencyStop: false, dailyActionLimit: 200, dailySpendLimitUsd: 5, sendAuthorized: false };
+  }
   return {
     level: isAutonomyLevel(data.level) ? data.level : DEFAULT_AUTONOMY_LEVEL,
     emergencyStop: Boolean(data.emergency_stop),
     dailyActionLimit: Number(data.daily_action_limit ?? 200),
     dailySpendLimitUsd: Number(data.daily_spend_limit_usd ?? 5),
+    sendAuthorized: Boolean(data.autopilot_send_authorized),
   };
 }
 
@@ -65,7 +77,7 @@ function daysSince(iso: string | null): number {
   return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
 }
 
-export type TaskOutcome = { result: "drafted" | "unsubscribed" | "skipped" | "noop"; detail?: string };
+export type TaskOutcome = { result: "drafted" | "sent" | "unsubscribed" | "skipped" | "noop"; detail?: string };
 
 /** Dispatch a task by type. Unknown types are a successful no-op. */
 export async function executeTask(task: AiTask): Promise<TaskOutcome> {
@@ -232,6 +244,57 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
     }
   }
 
-  await audit("autopilot_reply_drafted", { message_id: messageId, reply_id: saved?.id ?? null });
+  // Autonomous send decision (full automation). A reply is only put on the wire
+  // when the owner is at AUTOPILOT, has authorized real sending, the environment
+  // allows sending, and the draft is safe/confident/answering. Everything else —
+  // the pilot default — leaves the draft for owner approval (DRAFT behaviour).
+  const autoSend = decideAutoSend({
+    globalSendEnabled: sendingAllowedGlobally(),
+    autopilot: autonomy.level === "autopilot",
+    ownerAuthorizedSending: autonomy.sendAuthorized,
+    emergencyStop: autonomy.emergencyStop,
+    recipientUnsubscribed: facts.unsubscribed,
+    automatedSender: isAutomatedSender(message.from_address),
+    sensitive: isSensitiveInbound(message.body_text ?? message.snippet ?? ""),
+    draftValid: validateOutboundDraft(generated.content, "send_email", {
+      discountsAllowed: replyDiscountsAllowed(inputs),
+      recipientUnsubscribed: facts.unsubscribed,
+    }).ok,
+    defersToHuman: replyDefersToHuman(generated.content),
+  });
+
+  await audit("autopilot_reply_drafted", {
+    message_id: messageId,
+    reply_id: saved?.id ?? null,
+    auto_send: autoSend.send,
+    hold_reason: autoSend.send ? null : autoSend.reason,
+  });
+
+  if (saved?.id && autoSend.send) {
+    const sent = await sendApprovedReply({ businessId, replyId: saved.id, approve: true, approvedBy: null });
+    if (sent.ok) {
+      await audit("autopilot_reply_sent", {
+        message_id: messageId,
+        reply_id: saved.id,
+        gmail_message_id: sent.gmailMessageId,
+      });
+      if (message.lead_id) {
+        await db.from("lead_activity").insert({
+          business_id: businessId,
+          lead_id: message.lead_id,
+          type: "autopilot_reply_sent",
+          metadata: { message_id: messageId, reply_id: saved.id },
+        });
+      }
+      return { result: "sent", detail: saved.id };
+    }
+    await audit("autopilot_send_failed", {
+      message_id: messageId,
+      reply_id: saved.id,
+      reason: sent.error.slice(0, 200),
+      code: sent.code ?? null,
+    });
+  }
+
   return { result: "drafted", detail: saved?.id };
 }

@@ -1,15 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { executeTask } from "@/lib/ai/autopilot/engine";
-import { claimTask, completeTask, failTask, listRunnableTasks } from "@/lib/ai/autopilot/store";
+import { drainQueue } from "@/lib/ai/autopilot/worker";
 import { isAutopilotConfigured } from "@/lib/supabase/admin";
 
 /**
- * AI Autopilot background worker. Runs on a cron (NOT an infinite loop in a
- * request handler): each invocation drains a bounded batch of due tasks from the
- * ai_tasks queue, claiming each atomically (so two workers never run the same
- * task), executing it, and recording success / backoff / dead-letter. Protected
- * by CRON_SECRET; uses the service role. Produces only drafts — never sends.
+ * AI Autopilot background worker endpoint. Drains the ai_tasks queue via the
+ * shared `drainQueue` (NOT an infinite loop): each invocation claims a bounded
+ * batch atomically, executes, and records success / backoff / dead-letter.
+ * Protected by CRON_SECRET; uses the service role. The push webhook calls the
+ * same worker inline for real-time processing.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,12 +30,9 @@ async function run(): Promise<NextResponse> {
     );
   }
 
-  const now = new Date();
-  const summary = { processed: 0, drafted: 0, skipped: 0, failed: 0, dead: 0 };
-
-  let tasks;
   try {
-    tasks = await listRunnableTasks(now, BATCH);
+    const summary = await drainQueue(new Date(), BATCH);
+    return NextResponse.json(summary, { status: 200 });
   } catch (error) {
     // Most likely the ai_tasks table is not present yet (migration 0012 pending).
     return NextResponse.json(
@@ -44,22 +40,6 @@ async function run(): Promise<NextResponse> {
       { status: 503 },
     );
   }
-
-  for (const task of tasks) {
-    if (!(await claimTask(task.id, now))) continue; // another worker took it
-    summary.processed++;
-    try {
-      const outcome = await executeTask(task);
-      await completeTask(task.id);
-      if (outcome.result === "drafted") summary.drafted++;
-      else summary.skipped++;
-    } catch (error) {
-      summary.failed++;
-      await failTask(task, now, error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  return NextResponse.json(summary, { status: 200 });
 }
 
 export async function GET(request: NextRequest) {

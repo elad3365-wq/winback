@@ -41,3 +41,21 @@ export async function setEmergencyStopAction(on: boolean): Promise<AutopilotActi
     return { error: error instanceof Error ? error.message : "Could not update the emergency stop." };
   }
 }
+
+/**
+ * Owner authorizes (or revokes) AUTONOMOUS real sending. This is the explicit,
+ * per-business opt-in required — on top of AUTOPILOT level and the environment's
+ * WINBACK_GMAIL_ALLOW_SEND gate — before the AI may send a reply without review.
+ */
+export async function setSendAuthorizedAction(on: boolean): Promise<AutopilotActionResult> {
+  const { user, business } = await requireBusinessContext();
+  if (business.owner_id !== user.id) return { error: "Only the business owner can change this." };
+  const supabase = await createClient();
+  try {
+    await setAutonomy(supabase, business.id, { sendAuthorized: on });
+    revalidatePath("/settings/autopilot");
+    return { ok: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not update send authorization." };
+  }
+}

@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/database.types";
+import { stopWatch } from "@/lib/gmail/api";
 import { gmailConfig } from "@/lib/gmail/config";
 import { decryptSecret, encryptSecret } from "@/lib/gmail/crypto";
 import { refreshAccessToken, revokeToken, type GoogleTokenResponse } from "@/lib/gmail/oauth";
@@ -143,6 +144,15 @@ export async function getAccessToken(businessId: string): Promise<string> {
  */
 export async function disconnect(businessId: string): Promise<void> {
   const row = await loadRow(businessId);
+  // Stop the Gmail push watch first (needs a live access token, so before revoke).
+  if (row) {
+    try {
+      const accessToken = await getAccessToken(businessId);
+      await stopWatch(accessToken);
+    } catch {
+      // best-effort — the watch expires on its own within ~7 days regardless
+    }
+  }
   if (row?.refresh_token_encrypted) {
     try {
       await revokeToken(decryptSecret(row.refresh_token_encrypted));
