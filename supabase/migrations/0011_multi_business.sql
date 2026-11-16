@@ -37,7 +37,7 @@ create or replace function public.create_business(
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   v_user uuid := auth.uid();
@@ -131,7 +131,7 @@ create or replace function public.ensure_lead_in_business()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 begin
   if new.lead_id is null then

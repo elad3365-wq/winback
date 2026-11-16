@@ -1,6 +1,7 @@
 -- WinBack-Test only: create the 6 missing multi-business objects (from 0011_multi_business.sql).
 -- One transaction: any failed check rolls everything back. Inserts, updates and deletes no rows.
 -- Touches no RLS policy, no Gmail table and no Gmail setting.
+-- Both SECURITY DEFINER functions use search_path = '' with every object schema-qualified.
 begin;
 
 -- 1. Guard and prerequisites
@@ -52,7 +53,7 @@ create or replace function public.create_business(
   p_country text default null, p_state text default null, p_city text default null,
   p_currency text default 'USD'
 )
-returns uuid language plpgsql security definer set search_path = public
+returns uuid language plpgsql security definer set search_path = ''
 as $$
 declare
   v_user uuid := auth.uid();
@@ -106,7 +107,7 @@ grant execute on function public.create_business(text,text,text,text,text,text,t
 
 -- 3. ensure_lead_in_business(): rejects a row whose lead_id belongs to another business.
 create or replace function public.ensure_lead_in_business()
-returns trigger language plpgsql security definer set search_path = public
+returns trigger language plpgsql security definer set search_path = ''
 as $$
 begin
   if new.lead_id is null then return new; end if;
@@ -146,6 +147,10 @@ begin
   if has_function_privilege('anon', 'public.ensure_lead_in_business()', 'execute')
      or has_function_privilege('authenticated', 'public.ensure_lead_in_business()', 'execute') then
     raise exception 'CHECK FAILED: ensure_lead_in_business is callable by app users. Rolled back.';
+  end if;
+  if (select count(*) from pg_proc where oid in (v_cb, 'public.ensure_lead_in_business()'::regprocedure)
+      and prosecdef and proconfig = array['search_path=""']) <> 2 then
+    raise exception 'CHECK FAILED: a function is not SECURITY DEFINER with an empty search_path. Rolled back.';
   end if;
   if (select count(*) from pg_trigger where not tgisinternal and tgenabled = 'O'
       and tgfoid = 'public.ensure_lead_in_business()'::regprocedure) <> 4 then
