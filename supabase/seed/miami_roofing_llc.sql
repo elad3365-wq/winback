@@ -1,5 +1,6 @@
 -- WinBack — fictional test business: Miami Roofing LLC
 --
+-- WinBack-Test only (stops if winback_test_marker is missing; one transaction).
 -- Run in the Supabase SQL Editor AFTER 0011_multi_business.sql.
 -- Safe to run more than once: it only ever INSERTS, and only when the row is
 -- missing. It never updates or deletes anything, so every existing business
@@ -10,6 +11,19 @@
 -- reserved for fiction and never rings a real person.
 --
 -- Change v_email below if the test business should belong to another account.
+
+begin;
+
+do $$
+begin
+  if to_regnamespace('winback_test_marker') is null then
+    raise exception 'STOPPED: winback_test_marker not found, this is not WinBack-Test. Nothing was changed.';
+  end if;
+  if to_regproc('public.create_business') is null then
+    raise exception 'STOPPED: run the multi-business fix first. Nothing was changed.';
+  end if;
+end
+$$;
 
 do $$
 declare
@@ -81,6 +95,8 @@ begin
   raise notice 'Miami Roofing LLC is business % and belongs to %.', v_business, v_email;
 end
 $$;
+
+commit;
 
 -- Shows the result: every business this account belongs to, and how many leads
 -- each one has. FragraMood should be listed unchanged next to Miami Roofing LLC.

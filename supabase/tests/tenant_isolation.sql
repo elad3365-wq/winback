@@ -1,7 +1,7 @@
 -- WinBack — tenant isolation test (two separate businesses)
 --
--- Run in the Supabase SQL Editor AFTER 0011_multi_business.sql. Paste the
--- whole file and press Run.
+-- WinBack-Test only (stops if winback_test_marker is missing). Run in the
+-- Supabase SQL Editor AFTER 0011_multi_business.sql. Paste the whole file and press Run.
 --
 -- IT ALWAYS ENDS WITH AN ERROR, ON PURPOSE. The final RAISE carries the report
 -- and also rolls back everything this script created, so no test user,
@@ -19,6 +19,14 @@
 --      entry and an audit entry each (only for tables that exist).
 --   4. Becomes Alice, then Bob, exactly as the app does (role authenticated,
 --      JWT sub = their user id) and checks what each can read and write.
+
+do $$
+begin
+  if to_regnamespace('winback_test_marker') is null then
+    raise exception 'STOPPED: winback_test_marker not found, this is not WinBack-Test. Nothing was changed.';
+  end if;
+end
+$$;
 
 do $$
 declare
