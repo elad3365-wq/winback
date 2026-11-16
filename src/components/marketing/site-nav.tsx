@@ -7,12 +7,9 @@ import { Logo } from "@/components/logo";
 import { cn } from "@/lib/cn";
 
 const LINKS = [
-  { href: "#product", label: "Product" },
   { href: "#how-it-works", label: "How It Works" },
-  { href: "#features", label: "Features" },
-  { href: "#ai", label: "AI" },
-  { href: "#industries", label: "Industries" },
-  { href: "#pricing", label: "Pricing" },
+  { href: "#industries", label: "Who It's For" },
+  { href: "#apply", label: "Founding Pilot" },
   { href: "#faq", label: "FAQ" },
 ];
 
@@ -65,12 +62,12 @@ export function SiteNav({ isAuthed = false }: { isAuthed?: boolean }) {
               >
                 Sign In
               </Link>
-              <Link
-                href="/signup"
+              <a
+                href="#apply"
                 className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
               >
-                Get Started
-              </Link>
+                Apply for Early Access
+              </a>
             </>
           )}
         </div>
@@ -119,13 +116,13 @@ export function SiteNav({ isAuthed = false }: { isAuthed?: boolean }) {
                   >
                     Sign In
                   </Link>
-                  <Link
-                    href="/signup"
+                  <a
+                    href="#apply"
                     onClick={() => setOpen(false)}
-                    className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"
                   >
-                    Get Started
-                  </Link>
+                    Apply for Early Access
+                  </a>
                 </>
               )}
             </div>

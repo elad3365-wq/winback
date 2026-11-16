@@ -11,7 +11,7 @@ import {
 } from "@/components/marketing/beta-form-state";
 
 const fieldClass =
-  "mt-1.5 w-full rounded-lg border-0 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 transition focus:ring-2 focus:ring-inset focus:ring-indigo-500 placeholder:text-slate-400";
+  "mt-1.5 w-full rounded-lg border-0 bg-white min-h-11 px-3.5 py-2.5 text-base text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 transition focus:ring-2 focus:ring-inset focus:ring-indigo-500 placeholder:text-slate-400";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -19,9 +19,9 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 min-h-12 px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
     >
-      {pending ? "Sending…" : "Join the Beta"}
+      {pending ? "Sending…" : "Apply for Early Access"}
     </button>
   );
 }
@@ -35,9 +35,9 @@ export function BetaForm() {
         <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
           <CheckIcon className="h-6 w-6" />
         </span>
-        <h3 className="mt-4 text-lg font-semibold text-slate-900">You&apos;re on the list</h3>
+        <h3 className="mt-4 text-lg font-semibold text-slate-900">Thanks for applying</h3>
         <p className="mt-1.5 text-sm text-slate-500">
-          Thanks for your interest in WinBack. We&apos;ll reach out with early access details soon.
+          We&apos;ll contact you about the next available pilot spot.
         </p>
       </div>
     );
@@ -61,7 +61,7 @@ export function BetaForm() {
             name="business_name"
             type="text"
             autoComplete="organization"
-            placeholder="Miller Auto Care"
+            placeholder="Miller Heating & Air"
             className={fieldClass}
           />
         </div>
@@ -105,7 +105,7 @@ export function BetaForm() {
         <SubmitButton />
       </div>
       <p className="mt-3 text-center text-xs text-slate-400">
-        No credit card. We&apos;ll only email you about WinBack early access.
+        No credit card required. We&apos;ll only email you about the WinBack pilot.
       </p>
     </form>
   );
