@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
+import { PreviewDatabaseBanner } from "@/components/preview-database-banner";
+
 import "./globals.css";
 
 const inter = Inter({
@@ -23,6 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <body className="min-h-screen bg-slate-50 font-sans text-slate-900 antialiased">
+        <PreviewDatabaseBanner />
         {children}
       </body>
     </html>
