@@ -13,7 +13,10 @@ const AUTH_ONLY_PATHS = ["/login", "/signup", "/forgot-password", "/reset-passwo
 
 /** Accepts only internal, non protocol-relative redirect targets. */
 export function safeNext(next: string | null | undefined): string | null {
+  // Browsers treat "/\\host" like "//host", so backslashes and control
+  // characters are rejected too (open-redirect hardening).
   if (!next || !next.startsWith("/") || next.startsWith("//")) return null;
+  if (/[\\\u0000-\u001f]/.test(next)) return null;
   const isAuthOnly = AUTH_ONLY_PATHS.some(
     (path) => next === path || next.startsWith(`${path}/`) || next.startsWith(`${path}?`),
   );

@@ -1,50 +1,45 @@
 "use server";
 
-import type { BetaFormState } from "@/components/marketing/beta-form-state";
+import {
+  validateBetaSignup,
+  type BetaFormState,
+} from "@/components/marketing/beta-form-state";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
-function readString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
+const SAVE_FAILED =
+  "We couldn't save your request just now. Please try again in a minute, or email us directly.";
 
-function isValidEmail(email: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
+/**
+ * Public "Join the beta" form. A success message is shown ONLY after the row
+ * is confirmed written to `beta_signups`. Any missing configuration, database
+ * error, or thrown exception returns an error state so a visitor is never told
+ * they're signed up when nothing was saved.
+ */
 export async function submitBetaAction(
   _prevState: BetaFormState,
   formData: FormData,
 ): Promise<BetaFormState> {
-  const name = readString(formData, "name");
-  const businessName = readString(formData, "business_name");
-  const email = readString(formData, "email");
-  const businessType = readString(formData, "business_type");
+  const parsed = validateBetaSignup(formData);
+  if (!parsed.ok) return { status: "error", error: parsed.error };
 
-  if (!name) return { status: "error", error: "Please enter your name." };
-  if (!businessName) return { status: "error", error: "Please enter your business name." };
-  if (!isValidEmail(email)) return { status: "error", error: "Please enter a valid email address." };
-  if (!businessType) return { status: "error", error: "Please choose your business type." };
+  if (!isSupabaseConfigured()) {
+    console.error("beta_signups: Supabase is not configured; signup NOT saved.");
+    return { status: "error", error: SAVE_FAILED };
+  }
 
-  // Storage is best-effort during the beta. If Supabase isn't wired up yet, we
-  // still thank the visitor rather than showing them an error — the owner just
-  // needs to apply the beta_signups migration to start capturing submissions.
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = await createClient();
-      const { error } = await supabase.from("beta_signups").insert({
-        name,
-        business_name: businessName,
-        email,
-        business_type: businessType,
-      });
-      if (error) {
-        console.error("beta_signups insert failed:", error.message);
-      }
-    } catch (err) {
-      console.error("beta_signups insert threw:", err);
+  try {
+    const supabase = await createClient();
+    // No `.select()` on purpose: anon has INSERT but no SELECT policy, so
+    // asking for the row back would fail RLS even though the insert succeeded.
+    const { error } = await supabase.from("beta_signups").insert(parsed.value);
+    if (error) {
+      console.error("beta_signups insert failed:", error.code, error.message);
+      return { status: "error", error: SAVE_FAILED };
     }
+  } catch (err) {
+    console.error("beta_signups insert threw:", err);
+    return { status: "error", error: SAVE_FAILED };
   }
 
   return { status: "success", submittedAt: Date.now() };
