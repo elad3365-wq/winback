@@ -158,6 +158,10 @@ member permissions, delete cascade.
    locally against WinBack-Test and run `npm run e2e`.
 3. **Vercel access** unchanged since Day 1: team `fragra-mood` lists 0 projects to
    the connector, so Preview env targets / runtime errors are still unverified.
+   Confirmed on Day 2: the Vercel bot on PR #5 shows the GitHub app *does* deploy
+   this branch (project `winback`, Preview `winback-git-claude-lucid-johnson-aiu1rq-fragra-mood.vercel.app`),
+   but the connector gets **404 even for the exact project id** in the team. The
+   connector's grant needs the `winback` project added.
 4. Day 1 items still open: hardening SQL review, Supabase Auth settings check.
 
 ### Not verified (honest gaps)
