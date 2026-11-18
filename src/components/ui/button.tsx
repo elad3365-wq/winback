@@ -21,6 +21,20 @@ const SIZES: Record<Size, string> = {
   lg: "h-12 px-5 text-base",
 };
 
+/**
+ * The button look for something that must be a link (an <a> may not wrap a
+ * <button>, so `<Link><Button/></Link>` is invalid HTML).
+ */
+export function buttonClasses(variant: Variant = "primary", size: Size = "md", className?: string) {
+  return cn(
+    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors",
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+    VARIANTS[variant],
+    SIZES[size],
+    className,
+  );
+}
+
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant;
   size?: Size;

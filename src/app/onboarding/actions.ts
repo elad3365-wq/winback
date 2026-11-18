@@ -11,6 +11,8 @@ import {
 } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/server";
 
+const OWNER_ONLY = "Only the business owner can change the business profile and AI rules.";
+
 export type OnboardingResult = { status: "success" } | { status: "error"; error: string };
 
 function toNumberOrNull(value: string): number | null {
@@ -33,12 +35,16 @@ export async function completeOnboardingAction(
   const step2Error = validateStep(2, data);
   if (step2Error) return { status: "error", error: step2Error };
 
-  const { user, business } = await requireBusinessContext();
+  const { user, business, role } = await requireBusinessContext();
   const supabase = await createClient();
+
+  // A team member joining an existing business must not overwrite the
+  // owner's profile or AI rules; they only finish their own onboarding.
+  if (role !== "owner") return markOnboarded(supabase, user.id);
 
   const { aiCanOfferDiscounts, maximumDiscountPercent } = resolveDiscount(data.discountSetting);
 
-  const { error: businessError } = await supabase
+  const { data: updatedBusiness, error: businessError } = await supabase
     .from("businesses")
     .update({
       name: data.businessName.trim(),
@@ -57,10 +63,16 @@ export async function completeOnboardingAction(
       employee_count: toNumberOrNull(data.employeeCount),
       current_follow_up_method: clean(data.currentFollowUpMethod),
     })
-    .eq("id", business.id);
+    .eq("id", business.id)
+    .select("id");
 
   if (businessError) {
-    return { status: "error", error: businessError.message };
+    console.error("onboarding: business update failed", businessError);
+    return { status: "error", error: "Could not save your business details. Please try again." };
+  }
+  // Only owners may edit the business (RLS); a blocked update is 0 rows, not an error.
+  if (!updatedBusiness || updatedBusiness.length === 0) {
+    return { status: "error", error: OWNER_ONLY };
   }
 
   const { error: aiError } = await supabase.from("business_ai_settings").upsert(
@@ -77,16 +89,27 @@ export async function completeOnboardingAction(
   );
 
   if (aiError) {
-    return { status: "error", error: aiError.message };
+    console.error("onboarding: AI settings save failed", aiError);
+    return { status: "error", error: "Could not save your AI settings. Please try again." };
   }
 
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .update({ onboarding_completed: true })
-    .eq("id", user.id);
+  return markOnboarded(supabase, user.id);
+}
 
-  if (profileError) {
-    return { status: "error", error: profileError.message };
+async function markOnboarded(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<OnboardingResult> {
+  // Upsert, so an older account whose profile row is missing does not loop
+  // back to onboarding forever (profiles has insert-own + update-own policies).
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .upsert({ id: userId, onboarding_completed: true }, { onConflict: "id" })
+    .select("id");
+
+  if (profileError || !profile || profile.length === 0) {
+    console.error("onboarding: profile update failed", profileError);
+    return { status: "error", error: "Could not finish setup. Please try again." };
   }
 
   revalidatePath("/", "layout");
