@@ -44,7 +44,12 @@ export default async function LeadsPage({
       {error ? (
         <Alert tone="error">Could not load your leads: {error.message}</Alert>
       ) : (
-        <LeadsWorkspace leads={leads ?? []} initialStatus={statusParam} initialDue={dueParam} />
+        <LeadsWorkspace
+          leads={leads ?? []}
+          initialStatus={statusParam}
+          initialDue={dueParam}
+          openCreate={sp.new === "1"}
+        />
       )}
     </div>
   );

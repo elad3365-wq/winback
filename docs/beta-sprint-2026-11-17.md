@@ -1,6 +1,6 @@
 # WinBack — 5-day beta sprint log (Nov 17–21, 2026)
 
-Sprint branch: `claude/lucid-johnson-w8p0do` (based on `platform`, PR #3).
+Sprint branches: Day 1 `claude/lucid-johnson-w8p0do` (draft PR #4 → `platform`); Day 2+ `claude/lucid-johnson-aiu1rq`, stacked on Day 1 (each scheduled run is assigned its own branch, so the day-2 PR targets the day-1 branch).
 Draft PR target: `platform`. Environment: WinBack-Test (`onydgglobiouuusdiuhu`) only.
 Production DB (`yysmbjnspenslykzmlel`), `main`, and Production deploys were not touched.
 `WINBACK_GMAIL_ALLOW_SEND` stays off; no email was sent.
@@ -78,3 +78,107 @@ Code paths reviewed: `signUpAction` (handles confirm-email on/off), `signInActio
 ### Remaining for the free beta
 
 Preview verification (blocked), live E2E of the signup journey, AI drafting with a real key on Preview, Gmail test-account OAuth, pilot docs (Saturday).
+
+---
+
+## Day 2 — Wednesday, Nov 18 (onboarding & CRM)
+
+Branch `claude/lucid-johnson-aiu1rq` = Day 1 commit + this work. Nothing applied to
+any database; Production, `main`, Vercel settings and Gmail untouched.
+
+### Root cause found: "0 rows, no error" reported as success
+
+RLS turns a blocked UPDATE/DELETE into an empty result with **no error**. Every
+CRM write only checked `error`, so these all showed success while nothing changed:
+editing / re-statusing / deleting a lead after switching business in another tab,
+a lead that was already deleted, a team **member** saving onboarding or Settings
+(the `businesses_update_owner` policy blocks them), notes edited after deletion.
+
+### Fixed
+
+1. **Lead actions verify the affected row** (`src/app/(app)/leads/actions.ts`,
+   `src/app/(app)/leads/[leadId]/actions.ts`): update/delete/status/schedule/
+   log-contact/autopilot-pause/note edit+delete all `.select("id")` and return
+   "lead not found…" when nothing matched.
+2. **Raw Postgres errors no longer shown to owners** (e.g. "new row violates
+   row-level security policy"). Mapped by `friendlyLeadError()`; the raw error is
+   logged server-side.
+3. **Server-side lead validation** moved to `src/lib/lead-input.ts`: length caps
+   (name/service 120, phone 30 and must contain a digit), amount ≤ numeric(12,2),
+   `$`/`,` tolerated, impossible dates (2026-02-30) rejected. Notes capped at 5,000.
+4. **Activity history gap:** changing status in the *Edit lead* form did not log
+   `status_changed`. It does now (only when the status actually changed).
+5. **Onboarding / Settings for non-owners** (`src/app/onboarding/actions.ts`,
+   `src/app/(app)/settings/actions.ts`): owners get an error if the business row
+   was not updated; a member finishing onboarding only marks their own profile
+   (previously their wizard could overwrite the owner's AI rules, which members
+   may write under RLS). Settings refuses non-owners up front.
+   Profile completion now *upserts*, so an old account without a `profiles` row
+   can't loop back to onboarding forever.
+6. **No way to edit a lead from its own page** — added *Edit details*
+   (`src/components/leads/edit-lead-button.tsx`). Previously only reachable from
+   the List view (the default Pipeline view has no Edit either).
+7. **First-run experience**: new dashboard checklist (`src/lib/getting-started.ts`,
+   `src/components/dashboard/getting-started.tsx`) — Add first lead → Generate AI
+   follow-up → Review & approve → Connect Gmail (optional). Hidden once the three
+   required steps are done. A brand-new account no longer sees nine "0" tiles.
+   `/leads?new=1` opens the *Add lead* dialog directly; the empty leads page hides
+   the filter bar and says only name/phone/service are needed and nothing is sent.
+8. Invalid HTML `<a><button>` on the dashboard empty state → `buttonClasses()` link.
+
+### Tests (all ran in the session container)
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | pass |
+| `eslint .` | pass |
+| `vitest` | **203 / 203 pass** (28 files; +32 new: lead input ×17, lead actions ×8, onboarding action ×4, checklist ×3) |
+| `next build` | pass |
+| `next start` smoke: `/dashboard`, `/leads?new=1`, `/leads/<id>`, `/onboarding`, `/businesses/new` → 307 `/login`; `/api/cron/followups` → 401; `/` → 200 | pass |
+| WinBack-Test read-only re-check: marker present; `create_business` + `ensure_lead_in_business` present; 4 `*_lead_in_business` triggers present; RLS policies on businesses/leads/notes/activity/AI settings/profiles as expected | pass |
+| **New** `supabase/tests/crm_onboarding_flow.sql` (27 checks, self-rolling-back) | **NOT RUN** — see blocker 1 |
+
+The new SQL test walks the app's write paths as two fictional owners (Alice: 2
+businesses; Bob: 1, later a plain member of Alice's): onboarding updates, AI
+settings upsert, `create_business()`, lead add/edit/status/filter/switch, notes,
+activity, cross-tenant update/delete/insert attempts (expect 0 rows / rejection),
+member permissions, delete cascade.
+
+### Blockers (need the owner)
+
+1. **Supabase MCP write confirmation.** The rolled-back CRM test inserts throwaway
+   `auth.users` rows, so the Supabase connector asked for confirmation; nobody was
+   present during the scheduled run and it timed out. **To do:** paste
+   `supabase/tests/crm_onboarding_flow.sql` into the WinBack-Test SQL editor (it
+   refuses to run elsewhere and always ends with `CRM FLOW PASSED/FAILED`, rolling
+   everything back), or approve it when a run asks.
+2. **Network policy** blocks `*.supabase.co` and `*.vercel.app` from the session
+   container, so no live browser E2E (signup → onboarding → leads) could run.
+   Allowing `onydgglobiouuusdiuhu.supabase.co` would let a run start the app
+   locally against WinBack-Test and run `npm run e2e`.
+3. **Vercel access** unchanged since Day 1: team `fragra-mood` lists 0 projects to
+   the connector, so Preview env targets / runtime errors are still unverified.
+   Confirmed on Day 2: the Vercel bot on PR #5 shows the GitHub app *does* deploy
+   this branch (project `winback`, Preview `winback-git-claude-lucid-johnson-aiu1rq-fragra-mood.vercel.app`),
+   but the connector gets **404 even for the exact project id** in the team. The
+   connector's grant needs the `winback` project added.
+4. Day 1 items still open: hardening SQL review, Supabase Auth settings check.
+
+### Not verified (honest gaps)
+
+- Real signup → onboarding → dashboard in a browser (blocker 2/3).
+- Business switching UI in a browser (code + RLS reviewed only; the cookie is
+  honoured only for the caller's own memberships).
+
+### Next run (Thu, Nov 19) — AI engine
+
+- AI follow-up generation on fictional leads (unit-level with a mocked model;
+  real calls only if a key is reachable): draft / edit / approve / discard / copy.
+- Knowledge-base guardrails: no invented discounts, prices, guarantees or slots.
+- Spend/rate limits, logging, emergency stop; autonomous sending stays off.
+- Assisted workflow usable without Gmail.
+
+### Remaining for the free beta
+
+Live E2E on Preview (blocked), run `crm_onboarding_flow.sql`, AI drafting with a
+real key on Preview, Gmail test-account OAuth, pilot docs (Saturday).

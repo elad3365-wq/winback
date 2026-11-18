@@ -3,57 +3,16 @@
 import { revalidatePath } from "next/cache";
 
 import { requireBusinessContext } from "@/lib/business";
-import type { LeadStatus } from "@/lib/database.types";
-import { AUTOPILOT_STOP_STATUSES, isLeadStatus } from "@/lib/leads";
 import { logActivity } from "@/lib/activity";
+import { friendlyLeadError, LEAD_NOT_FOUND, parseLeadInput } from "@/lib/lead-input";
+import { AUTOPILOT_STOP_STATUSES, isLeadStatus } from "@/lib/leads";
 import { createClient } from "@/lib/supabase/server";
 
 import type { LeadFormState } from "./form-state";
 
-type ParsedLead = {
-  customer_name: string;
-  phone: string;
-  service: string;
-  estimate_amount: number;
-  status: LeadStatus;
-  follow_up_date: string | null;
-};
-
 function readString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
-}
-
-function parseLeadForm(formData: FormData): ParsedLead | { error: string } {
-  const customerName = readString(formData, "customer_name");
-  const phone = readString(formData, "phone");
-  const service = readString(formData, "service");
-  const amountRaw = readString(formData, "estimate_amount");
-  const statusRaw = readString(formData, "status");
-  const followUpDate = readString(formData, "follow_up_date");
-
-  if (!customerName) return { error: "Customer name is required." };
-  if (!phone) return { error: "Phone number is required." };
-  if (!service) return { error: "Service is required." };
-  if (!isLeadStatus(statusRaw)) return { error: "Pick a valid status." };
-
-  const amount = amountRaw === "" ? 0 : Number(amountRaw);
-  if (!Number.isFinite(amount) || amount < 0) {
-    return { error: "Estimate amount must be a positive number." };
-  }
-
-  if (followUpDate && !/^\d{4}-\d{2}-\d{2}$/.test(followUpDate)) {
-    return { error: "Follow-up date must be a valid date." };
-  }
-
-  return {
-    customer_name: customerName,
-    phone,
-    service,
-    estimate_amount: Math.round(amount * 100) / 100,
-    status: statusRaw,
-    follow_up_date: followUpDate || null,
-  };
 }
 
 function revalidate() {
@@ -65,7 +24,7 @@ export async function createLeadAction(
   _prevState: LeadFormState,
   formData: FormData,
 ): Promise<LeadFormState> {
-  const parsed = parseLeadForm(formData);
+  const parsed = parseLeadInput(formData);
   if ("error" in parsed) {
     return { status: "error", error: parsed.error };
   }
@@ -101,19 +60,18 @@ export async function createLeadAction(
     .select("id")
     .single();
 
-  if (error) {
-    return { status: "error", error: error.message };
+  if (error || !created) {
+    console.error("createLeadAction failed", error);
+    return { status: "error", error: friendlyLeadError(error) };
   }
 
-  if (created) {
-    await logActivity({
-      businessId: business.id,
-      leadId: created.id,
-      userId: user.id,
-      type: "lead_created",
-      metadata: { status: parsed.status },
-    });
-  }
+  await logActivity({
+    businessId: business.id,
+    leadId: created.id,
+    userId: user.id,
+    type: "lead_created",
+    metadata: { status: parsed.status },
+  });
 
   revalidate();
   return { status: "success", submittedAt: Date.now() };
@@ -128,25 +86,49 @@ export async function updateLeadAction(
     return { status: "error", error: "Missing lead id." };
   }
 
-  const parsed = parseLeadForm(formData);
+  const parsed = parseLeadInput(formData);
   if ("error" in parsed) {
     return { status: "error", error: parsed.error };
   }
 
-  const { business } = await requireBusinessContext();
+  const { user, business } = await requireBusinessContext();
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data: before } = await supabase
+    .from("leads")
+    .select("status")
+    .eq("id", leadId)
+    .eq("business_id", business.id)
+    .maybeSingle();
+  if (!before) return { status: "error", error: LEAD_NOT_FOUND };
+
+  // RLS turns a blocked UPDATE into "0 rows, no error", so ask for the row
+  // back and treat an empty result as a failure rather than a silent success.
+  const { data: updated, error } = await supabase
     .from("leads")
     .update(parsed)
     .eq("id", leadId)
-    .eq("business_id", business.id);
+    .eq("business_id", business.id)
+    .select("id");
 
   if (error) {
-    return { status: "error", error: error.message };
+    console.error("updateLeadAction failed", error);
+    return { status: "error", error: friendlyLeadError(error) };
+  }
+  if (!updated || updated.length === 0) return { status: "error", error: LEAD_NOT_FOUND };
+
+  if (before.status !== parsed.status) {
+    await logActivity({
+      businessId: business.id,
+      leadId,
+      userId: user.id,
+      type: "status_changed",
+      metadata: { from: before.status, to: parsed.status },
+    });
   }
 
   revalidate();
+  revalidatePath(`/leads/${leadId}`);
   return { status: "success", submittedAt: Date.now() };
 }
 
@@ -165,23 +147,28 @@ export async function updateLeadStatusAction(leadId: string, status: string) {
     .eq("business_id", business.id)
     .maybeSingle();
 
-  const { error } = await supabase
+  if (!before) return { error: LEAD_NOT_FOUND };
+
+  const { data: updated, error } = await supabase
     .from("leads")
     .update({ status })
     .eq("id", leadId)
-    .eq("business_id", business.id);
+    .eq("business_id", business.id)
+    .select("id");
 
   if (error) {
-    return { error: error.message };
+    console.error("updateLeadStatusAction failed", error);
+    return { error: friendlyLeadError(error) };
   }
+  if (!updated || updated.length === 0) return { error: LEAD_NOT_FOUND };
 
-  if (!before || before.status !== status) {
+  if (before.status !== status) {
     await logActivity({
       businessId: business.id,
       leadId,
       userId: user.id,
       type: "status_changed",
-      metadata: { from: before?.status ?? null, to: status },
+      metadata: { from: before.status, to: status },
     });
   }
 
@@ -194,15 +181,18 @@ export async function deleteLeadAction(leadId: string) {
   const { business } = await requireBusinessContext();
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data: deleted, error } = await supabase
     .from("leads")
     .delete()
     .eq("id", leadId)
-    .eq("business_id", business.id);
+    .eq("business_id", business.id)
+    .select("id");
 
   if (error) {
-    return { error: error.message };
+    console.error("deleteLeadAction failed", error);
+    return { error: friendlyLeadError(error) };
   }
+  if (!deleted || deleted.length === 0) return { error: LEAD_NOT_FOUND };
 
   revalidate();
   return { error: undefined };

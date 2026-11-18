@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AiFollowup } from "@/components/leads/ai-followup";
+import { EditLeadButton } from "@/components/leads/edit-lead-button";
 import { FollowUpScheduler } from "@/components/leads/follow-up-scheduler";
 import { LeadAutopilotToggle } from "@/components/leads/lead-autopilot-toggle";
 import { LeadNotes } from "@/components/leads/lead-notes";
@@ -62,7 +63,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ lea
             </div>
             <p className="mt-1 text-xs text-slate-400">Created {formatDate(typedLead.created_at.slice(0, 10))}</p>
           </div>
-          <LeadStatusControl leadId={typedLead.id} status={typedLead.status} />
+          <div className="flex flex-col items-start gap-2 lg:items-end">
+            <LeadStatusControl key={typedLead.status} leadId={typedLead.id} status={typedLead.status} />
+            <EditLeadButton lead={typedLead} />
+          </div>
         </div>
       </Card>
 
