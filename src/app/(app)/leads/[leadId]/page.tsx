@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AiFollowup } from "@/components/leads/ai-followup";
+import { AiFollowup, type InitialAiMessage } from "@/components/leads/ai-followup";
 import { EditLeadButton } from "@/components/leads/edit-lead-button";
 import { FollowUpScheduler } from "@/components/leads/follow-up-scheduler";
 import { LeadAutopilotToggle } from "@/components/leads/lead-autopilot-toggle";
@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requireBusinessContext } from "@/lib/business";
 import type { AiMessage, Json, Lead, LeadActivity, LeadNote } from "@/lib/database.types";
+import { parseReviewFlags } from "@/lib/ai/review";
 import { formatCurrency, formatDate, formatPhone } from "@/lib/format";
 import { daysOverdue, effectiveFollowUpDate, isDueToday, isOverdue, LEAD_STATUS_LABELS } from "@/lib/leads";
 import { createClient } from "@/lib/supabase/server";
@@ -40,6 +41,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ lea
     supabase.from("ai_messages").select("*").eq("lead_id", leadId).order("created_at", { ascending: false }),
   ]);
 
+  const initialAiMessage = latestOpenMessage((messages as AiMessage[]) ?? []);
   const timeline = buildTimeline(typedLead, (activity as LeadActivity[]) ?? [], (messages as AiMessage[]) ?? []);
 
   return (
@@ -73,7 +75,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ lea
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card>
-            <AiFollowup lead={typedLead} />
+            <AiFollowup lead={typedLead} initial={initialAiMessage} />
           </Card>
 
           <Card>
@@ -174,6 +176,25 @@ function metaString(metadata: Json | null, key: string): string | null {
   return null;
 }
 
+/** The newest draft/edited/approved message, so a reload keeps the owner's work. */
+function latestOpenMessage(messages: AiMessage[]): InitialAiMessage | null {
+  const open = messages.find((m) => m.status === "draft" || m.status === "edited" || m.status === "approved");
+  if (!open) return null;
+  const inputs = open.prompt_inputs;
+  const flags =
+    inputs && typeof inputs === "object" && !Array.isArray(inputs)
+      ? parseReviewFlags((inputs as Record<string, unknown>).review_flags)
+      : [];
+  return {
+    id: open.id,
+    message: open.message,
+    channel: open.channel === "email" ? "email" : "sms",
+    status: open.status as InitialAiMessage["status"],
+    approvedAt: open.approved_at,
+    flags,
+  };
+}
+
 function statusLabel(value: string | null): string {
   if (value && value in LEAD_STATUS_LABELS) return LEAD_STATUS_LABELS[value as keyof typeof LEAD_STATUS_LABELS];
   return value ?? "unknown";
@@ -197,6 +218,10 @@ function activityLabel(event: LeadActivity): string {
       return "Autopilot paused";
     case "autopilot_resumed":
       return "Autopilot resumed";
+    case "ai_message_approved":
+      return "AI follow-up approved";
+    case "ai_message_sent_manually":
+      return `AI follow-up sent manually${metaString(event.metadata, "channel") ? ` (${metaString(event.metadata, "channel")!.toUpperCase()})` : ""}`;
     default:
       return event.type.replace(/_/g, " ");
   }
@@ -207,7 +232,10 @@ function buildTimeline(lead: Lead, activity: LeadActivity[], messages: AiMessage
 
   for (const message of messages) {
     events.push({ at: message.created_at, label: `AI follow-up drafted (${message.channel.toUpperCase()})` });
-    if (message.approved_at) events.push({ at: message.approved_at, label: "AI follow-up approved" });
+    const approvalLogged = activity.some(
+      (event) => event.type === "ai_message_approved" && metaString(event.metadata, "ai_message_id") === message.id,
+    );
+    if (message.approved_at && !approvalLogged) events.push({ at: message.approved_at, label: "AI follow-up approved" });
   }
 
   if (!activity.some((event) => event.type === "lead_created")) {
