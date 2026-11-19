@@ -137,7 +137,7 @@ export type ReplyGeneration = FollowupGeneration & { discountOffered: boolean };
 /** Generate a reply draft. Applies the discount sanitizer to the model output. */
 export async function generateReply(inputs: ReplyInputs): Promise<ReplyGeneration> {
   const { system, user } = buildReplyPrompt(inputs);
-  const result = await completeText(system, user, 1024);
+  const result = await completeText(system, user);
   const allowDiscount = replyDiscountsAllowed(inputs);
   const { text, mentionedDiscount } = sanitizeDiscounts(result.content, allowDiscount);
   return { content: text, model: result.model, discountOffered: allowDiscount && mentionedDiscount };

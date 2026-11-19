@@ -11,6 +11,7 @@ import {
   isUnsubscribeRequest,
   leadUpdateForInboundReply,
 } from "@/lib/gmail/reply-detection";
+import { AI_FAILURE_MESSAGES, classifyAiError } from "@/lib/ai/anthropic";
 import { generateReply, type ReplyInputs } from "@/lib/gmail/reply";
 import { sendApprovedReply } from "@/lib/gmail/send";
 import { syncInbox } from "@/lib/gmail/sync";
@@ -169,7 +170,9 @@ export async function generateReplyAction(messageId: string): Promise<ActionResu
   try {
     generated = await generateReply(inputs);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "AI reply generation failed." };
+    const kind = classifyAiError(error);
+    console.error(`[email/reply] generation failed (${kind})`, error);
+    return { error: AI_FAILURE_MESSAGES[kind] };
   }
   if (!generated.content) return { error: "Couldn't generate a usable reply. Please try again." };
 

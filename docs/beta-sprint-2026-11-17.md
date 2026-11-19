@@ -1,6 +1,6 @@
 # WinBack — 5-day beta sprint log (Nov 17–21, 2026)
 
-Sprint branches: Day 1 `claude/lucid-johnson-w8p0do` (draft PR #4 → `platform`); Day 2+ `claude/lucid-johnson-aiu1rq`, stacked on Day 1 (each scheduled run is assigned its own branch, so the day-2 PR targets the day-1 branch).
+Sprint branches (stacked — each scheduled run is assigned its own branch): Day 1 `claude/lucid-johnson-w8p0do` (draft PR #4 → `platform`); Day 2 `claude/lucid-johnson-aiu1rq` (draft PR #5 → Day 1); Day 3 `claude/lucid-johnson-vk2ufp` (draft PR → Day 2). Merge in order #4 → #5 → Day 3, or squash the top branch into `platform`.
 Draft PR target: `platform`. Environment: WinBack-Test (`onydgglobiouuusdiuhu`) only.
 Production DB (`yysmbjnspenslykzmlel`), `main`, and Production deploys were not touched.
 `WINBACK_GMAIL_ALLOW_SEND` stays off; no email was sent.
@@ -182,3 +182,113 @@ member permissions, delete cascade.
 
 Live E2E on Preview (blocked), run `crm_onboarding_flow.sql`, AI drafting with a
 real key on Preview, Gmail test-account OAuth, pilot docs (Saturday).
+
+---
+
+## Day 3 — Thursday, Nov 19 (AI engine & business intelligence)
+
+Branch `claude/lucid-johnson-vk2ufp` = Day 1 + Day 2 + this work. Nothing was
+written to any database (read-only checks on WinBack-Test only). Production,
+`main`, Vercel settings and Gmail untouched; no model call was made against a
+real API key (no key reachable from the session) — all AI tests use a mocked SDK.
+
+### Problems found
+
+1. **Emergency stop / AI-off / daily limits were ignored by the cron that
+   actually runs.** `vercel.json` schedules `/api/cron/followups` daily; it never
+   read `business_ai_autonomy`, so it kept drafting (and spending) after an
+   owner hit *Emergency stop* or set AI to *Off*, with no daily action or spend
+   cap. Only the unscheduled `/api/cron/ai-tasks` engine honoured them.
+2. **The knowledge base was unusable.** `business_knowledge` existed (0012) but
+   had no UI (0 rows on WinBack-Test), and the owner's *Generate* button ignored
+   it — only the Gmail autopilot read it.
+3. **No output check beyond discounts.** A draft could quote an invented price,
+   a discount above the business's ceiling (when discounts are on), a warranty,
+   or "we have an opening Friday at 9am", and nothing told the owner.
+4. **Model call failure handling.** `max_tokens: 1024` with the current models'
+   default adaptive thinking (thinking counts toward the cap) and no
+   `stop_reason` check: a cut-off or refused response could be saved as a draft.
+   Provider errors all became one generic message; the Gmail reply action showed
+   raw error text.
+5. **Approval workflow gaps.** No way to discard a draft (`cancelAiMessageAction`
+   was unused), a reload lost the draft, *Regenerate* left orphan drafts, the
+   only next step after approval was a disabled "Send (coming soon)", edits never
+   set status `edited`, and drafts could be generated for unsubscribed customers.
+6. **Approval audit never written (pre-existing).** `ai_audit_log` has no INSERT
+   policy for signed-in users (service-role only), so the approve action's audit
+   insert has always failed silently. RLS was **not** loosened; approvals are now
+   recorded in `lead_activity` (member-insertable) instead.
+
+### Fixed
+
+- `src/lib/ai/guard.ts` (new): one policy for both entry points. AI *off* blocks
+  manual + automatic; *emergency stop* halts automatic drafting (a human click
+  still works — it's reviewed before anything is sent); daily action limit
+  (automatic); daily spend limit (all drafts, estimated per model, UTC day).
+- `/api/cron/followups`: applies the guard per business (blocked leads stay due
+  and resume later, with a `skipped_<reason>` audit row), passes the knowledge
+  base, runs the output review, and counts `edited` drafts in its duplicate check.
+- `/api/leads/[leadId]/ai-followup`: knowledge base in the prompt, guard,
+  unsubscribed → 409, output review, typed failure messages, usage + review
+  flags stored in `prompt_inputs`.
+- `src/lib/ai/followup.ts`: "Verified business facts" section; the model may
+  state prices/guarantees/policies only from it (or the estimate) and must never
+  offer a specific appointment time. Entries capped (25 × 600 chars).
+- `src/lib/ai/review.ts` (new): removes sentences with a discount above the
+  ceiling; flags unverified prices, guarantees/warranties, specific time slots,
+  and financing/payment plans that aren't offered. Shown to the owner as
+  "Check before sending".
+- `src/lib/ai/anthropic.ts`: `max_tokens` 4096, refusal/truncated/empty →
+  `AiGenerationError` (never saved), `classifyAiError()` + owner-safe messages
+  (rate limit, bad key, bad model id, outage), token usage returned.
+  Model ids/prices in `models.ts`/`limits.ts` checked against current docs: correct.
+- Knowledge base UI: `/settings/knowledge` (nav: "Knowledge base") — add/edit/
+  delete, "Stop using / Use in AI", owner-only (RLS also enforces), shows which
+  Settings facts the AI also uses, helpful empty state.
+- Assisted workflow without Gmail (`ai-followup.tsx`, `ai-actions.ts`): latest
+  open draft reloads with its flags; Discard; Regenerate cancels the old draft;
+  after approval: Copy, **Open in Messages** (`sms:` link with the text), and
+  **"I sent it — mark as sent"** (approved → `sent`, counts a contact, logs to the
+  timeline). WinBack still sends nothing.
+
+### Tests (all ran in the session container)
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | pass |
+| `eslint .` | pass |
+| `vitest` | **249 / 249 pass** (35 files; +46 new: review ×11, guard ×7, provider wrapper ×5, knowledge/sms ×5, prompt knowledge ×3, approval actions ×5, generate route ×6, follow-up cron ×3 — one of my own assertions was wrong on the first run and was corrected) |
+| `next build` | pass (new route `/settings/knowledge`) |
+| `next start` smoke: `/settings/knowledge`, `/leads/abc`, `POST /api/leads/abc/ai-followup` → 307 `/login`; `/api/cron/followups` → 401 | pass |
+| WinBack-Test read-only: `create_business`, `ensure_lead_in_business`, 4 `*_lead_in_business` triggers present; `ai_messages` status check allows `sent`/`edited`, members may update `status`/`sent_at`; `business_knowledge` owner-only write policies present, 0 rows | pass |
+| Real model call on Preview | **NOT RUN** — no key in the session; Preview unreachable |
+
+### Blockers (need the owner)
+
+1. **Vercel connector** still 404 for project `prj_CMGZpI4AwEahwicobp9W3UgHbDhR`
+   in team `team_Ye0AaLmXyvRO2iJY1iV7Xju7` (re-checked today). Can't confirm
+   `ANTHROPIC_API_KEY` / `WINBACK_FOLLOWUP_MODEL` / `CRON_SECRET` are set for Preview.
+2. **Live AI check** — once Preview is reachable, on WinBack-Test: add 2–3
+   knowledge entries, generate a draft on a fictional lead, confirm flags appear
+   for an invented price, approve, mark as sent.
+3. Still open from Days 1–2: run `supabase/tests/crm_onboarding_flow.sql`,
+   review the hardening SQL, check Supabase Auth settings, network allowlist.
+
+### Decisions to confirm
+
+- Emergency stop does **not** block a human clicking *Generate* (drafts are
+  always reviewed). If you'd rather it stop all AI spend, it's a one-line change
+  in `canGenerateDraft`.
+- Daily limits reset at midnight **UTC** (02:00 Israel time).
+
+### Next run (Fri, Nov 20) — Gmail
+
+- Review the Gmail code in `platform` (OAuth, token encryption, sync, push, reply
+  drafts) with mocks; make `generateReplyAction` honour the same AI guard and
+  output review; duplicate prevention; cross-business isolation.
+- `WINBACK_GMAIL_ALLOW_SEND` stays off.
+
+### Remaining for the free beta
+
+Live E2E on Preview (blocked), a real model call on Preview, `crm_onboarding_flow.sql`,
+Gmail test-account OAuth, pilot docs and GO/NO-GO (Saturday).

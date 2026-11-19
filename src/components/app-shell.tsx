@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/leads", label: "Leads" },
   { href: "/settings/ai", label: "AI Autopilot" },
   { href: "/settings/autopilot", label: "AI Control" },
+  { href: "/settings/knowledge", label: "Knowledge base" },
   { href: "/settings/email", label: "Email" },
   { href: "/settings", label: "Settings" },
   { href: "/businesses", label: "Businesses" },

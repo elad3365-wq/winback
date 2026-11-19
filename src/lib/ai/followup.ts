@@ -23,7 +23,40 @@ export type FollowupInputs = {
   additionalRules: string | null;
   channel: "sms" | "email";
   tone: AiTone;
+  /**
+   * Owner-approved knowledge-base entries ("Title: content"), e.g. services,
+   * prices, hours, policies. The only facts beyond the lead itself that the
+   * model may state. Optional so older callers keep working.
+   */
+  knowledge?: string[];
 };
+
+/** Hard caps so a large knowledge base can't blow up prompt size/cost. */
+export const MAX_KNOWLEDGE_ENTRIES = 25;
+export const MAX_KNOWLEDGE_ENTRY_CHARS = 600;
+
+/** Trim, drop blanks, and cap the knowledge entries passed to the model. */
+export function normalizeKnowledge(entries: readonly string[] | undefined): string[] {
+  return (entries ?? [])
+    .map((entry) => entry.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, MAX_KNOWLEDGE_ENTRIES)
+    .map((entry) =>
+      entry.length > MAX_KNOWLEDGE_ENTRY_CHARS ? `${entry.slice(0, MAX_KNOWLEDGE_ENTRY_CHARS - 1)}…` : entry,
+    );
+}
+
+/**
+ * Everything the owner has verified, flattened to one string. The post-check in
+ * `lib/ai/review.ts` treats numbers and claims found here as "known".
+ */
+export function verifiedFactsText(inputs: FollowupInputs): string {
+  return [
+    inputs.businessHours ?? "",
+    inputs.additionalRules ?? "",
+    ...normalizeKnowledge(inputs.knowledge),
+  ].join("\n");
+}
 
 const TONE_INSTRUCTIONS: Record<AiTone, string> = {
   professional: "Tone: professional and polished, respectful and competent.",
@@ -87,6 +120,8 @@ export function buildFollowupPrompt(inputs: FollowupInputs): {
     `- ${financingRule}`,
     `- ${paymentPlanRule}`,
     "- Respect the business's additional rules and business hours if provided.",
+    "- Prices, services, hours, guarantees, warranties and policies may be stated ONLY if they appear under \"Verified business facts\" (or are the estimate amount). Never quote any other price or promise.",
+    "- Never offer a specific appointment day or time — you cannot see the calendar. Invite the customer to reply and say the team will find a time.",
     "- No placeholders or brackets like [Name] or [Company]; use the real names given.",
     "- This is a DRAFT for the business owner to review. Do not claim anything has been scheduled, booked, or confirmed.",
     "",
@@ -122,10 +157,17 @@ export function buildFollowupPrompt(inputs: FollowupInputs): {
     .filter(Boolean)
     .join("\n");
 
+  const knowledge = normalizeKnowledge(inputs.knowledge);
+  const knowledgeBlock =
+    knowledge.length > 0
+      ? ["", "Verified business facts (approved by the owner — the only extra facts you may use):", ...knowledge.map((k) => `- ${k}`)].join("\n")
+      : "\nVerified business facts: none provided. Do not state any price other than the estimate, and no guarantees or policies.";
+
   const user = [
     "Write one follow-up message for this customer using only these details:",
     "",
     details,
+    knowledgeBlock,
   ].join("\n");
 
   return { system, user };

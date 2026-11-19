@@ -146,3 +146,28 @@ describe("sanitizeDiscounts", () => {
     expect(r.mentionedDiscount).toBe(false);
   });
 });
+
+describe("buildFollowupPrompt — verified knowledge", () => {
+  it("lists approved knowledge entries as the only extra facts", () => {
+    const { system, user } = buildFollowupPrompt(
+      inputs({ knowledge: ["Warranty: 2 years on workmanship", "  ", "Service area: Miami-Dade"] }),
+    );
+    expect(user).toContain("Verified business facts");
+    expect(user).toContain("- Warranty: 2 years on workmanship");
+    expect(user).toContain("- Service area: Miami-Dade");
+    expect(system).toContain("Never offer a specific appointment day or time");
+  });
+
+  it("says there are no verified facts when the knowledge base is empty", () => {
+    const { user } = buildFollowupPrompt(inputs());
+    expect(user).toContain("Verified business facts: none provided");
+  });
+
+  it("caps the number and length of entries", async () => {
+    const { normalizeKnowledge, MAX_KNOWLEDGE_ENTRIES, MAX_KNOWLEDGE_ENTRY_CHARS } = await import("@/lib/ai/followup");
+    const many = Array.from({ length: 40 }, (_, i) => `Fact ${i} ${"x".repeat(1000)}`);
+    const normalized = normalizeKnowledge(many);
+    expect(normalized).toHaveLength(MAX_KNOWLEDGE_ENTRIES);
+    expect(normalized.every((k) => k.length <= MAX_KNOWLEDGE_ENTRY_CHARS)).toBe(true);
+  });
+});
