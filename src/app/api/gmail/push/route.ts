@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { drainQueue } from "@/lib/ai/autopilot/worker";
 import { gmailPushToken, isGmailFeatureEnabled, isGmailPushConfigured } from "@/lib/gmail/config";
 import { processHistory } from "@/lib/gmail/history";
-import { parsePubSubPush } from "@/lib/gmail/parse";
+import { escapeLikePattern, parsePubSubPush } from "@/lib/gmail/parse";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -51,24 +51,41 @@ export async function POST(request: NextRequest) {
   if (!db) return NextResponse.json({ error: "Service role not configured." }, { status: 503 });
 
   const email = note.emailAddress.trim().toLowerCase();
-  const { data: conn } = await db
+  // Case-insensitive exact match. The same mailbox may be connected to more
+  // than one business (an owner with two workspaces) — process each of them.
+  const { data: conns, error: lookupError } = await db
     .from("business_gmail_connections")
     .select("business_id, revoked_at")
-    .ilike("google_account_email", email)
-    .is("revoked_at", null)
-    .maybeSingle();
-  if (!conn) return NextResponse.json({ ok: true, ignored: "unknown_mailbox" }, { status: 200 });
+    .ilike("google_account_email", escapeLikePattern(email))
+    .is("revoked_at", null);
+  if (lookupError) {
+    console.error("[gmail/push] connection lookup failed", lookupError.message);
+    return NextResponse.json({ error: "Lookup failed." }, { status: 500 });
+  }
+  if (!conns || conns.length === 0) return NextResponse.json({ ok: true, ignored: "unknown_mailbox" }, { status: 200 });
+
+  let stored = 0;
+  let failed = 0;
+  for (const conn of conns) {
+    try {
+      const history = await processHistory(conn.business_id);
+      stored += history.stored;
+    } catch (error) {
+      failed++;
+      console.error("[gmail/push] history processing failed", error instanceof Error ? error.message : error);
+    }
+  }
+  // Every mailbox failed → transient: 500 so Pub/Sub retries with backoff (the
+  // daily cron reconciles too). Error details stay in the server log.
+  if (failed === conns.length) return NextResponse.json({ error: "Processing failed." }, { status: 500 });
 
   try {
-    const history = await processHistory(conn.business_id);
-    // Trigger the worker immediately so a reply is drafted/sent in seconds.
+    // Trigger the worker immediately so a reply draft is ready in seconds.
     const drained = await drainQueue(new Date(), 10);
-    return NextResponse.json({ ok: true, history: history.mode, stored: history.stored, drained }, { status: 200 });
+    return NextResponse.json({ ok: true, businesses: conns.length, stored, failed, drained }, { status: 200 });
   } catch (error) {
-    // Transient failure: 500 so Pub/Sub retries with backoff (cron reconciles too).
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Processing failed." },
-      { status: 500 },
-    );
+    // Mail is stored and queued; the cron drains it later. ACK to avoid retries.
+    console.error("[gmail/push] queue drain failed", error instanceof Error ? error.message : error);
+    return NextResponse.json({ ok: true, businesses: conns.length, stored, failed, drained: null }, { status: 200 });
   }
 }

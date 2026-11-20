@@ -224,7 +224,7 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
       body: generated.content,
       ai_model: generated.model,
       discount_offered: generated.discountOffered,
-      prompt_inputs: { source: "autopilot", inbound_subject: message.subject },
+      prompt_inputs: { source: "autopilot", inbound_subject: message.subject, review_flags: generated.flags, usage: generated.usage ?? null },
     })
     .select("id")
     .maybeSingle();
@@ -256,10 +256,14 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
     recipientUnsubscribed: facts.unsubscribed,
     automatedSender: isAutomatedSender(message.from_address),
     sensitive: isSensitiveInbound(message.body_text ?? message.snippet ?? ""),
-    draftValid: validateOutboundDraft(generated.content, "send_email", {
-      discountsAllowed: replyDiscountsAllowed(inputs),
-      recipientUnsubscribed: facts.unsubscribed,
-    }).ok,
+    // Fail closed: a draft with any unverified claim (price, guarantee, time
+    // slot, financing) always waits for a human, even at full autopilot.
+    draftValid:
+      generated.flags.length === 0 &&
+      validateOutboundDraft(generated.content, "send_email", {
+        discountsAllowed: replyDiscountsAllowed(inputs),
+        recipientUnsubscribed: facts.unsubscribed,
+      }).ok,
     defersToHuman: replyDefersToHuman(generated.content),
   });
 

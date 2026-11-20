@@ -27,6 +27,23 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 type Db = SupabaseClient<Database>;
 
+/**
+ * The stored Google grant can no longer be used (the owner revoked access in
+ * their Google account, changed password, or the refresh token expired). The
+ * only fix is to reconnect, so callers show that instead of a raw Google error.
+ */
+export class GmailReconnectRequiredError extends Error {
+  constructor() {
+    super("The Gmail connection has expired or was revoked. Please reconnect your Gmail account.");
+    this.name = "GmailReconnectRequiredError";
+  }
+}
+
+/** Google's token endpoint answers `invalid_grant` for a revoked/expired refresh token. */
+export function isInvalidGrant(error: unknown): boolean {
+  return error instanceof Error && /\(invalid_grant[:)]/.test(error.message);
+}
+
 export type ConnectionStatus =
   | { connected: false }
   | { connected: true; email: string; connectedAt: string; scope: string | null };
@@ -115,18 +132,24 @@ export async function storeConnection(params: {
  */
 export async function getAccessToken(businessId: string): Promise<string> {
   const row = await loadRow(businessId);
-  if (!row) throw new Error("This business has not connected a Gmail account.");
+  if (!row) throw new GmailReconnectRequiredError();
 
   const expiresAt = row.access_token_expires_at ? Date.parse(row.access_token_expires_at) : 0;
   if (expiresAt && expiresAt - Date.now() > REFRESH_SKEW_MS) {
     return decryptSecret(row.access_token_encrypted);
   }
   if (!row.refresh_token_encrypted) {
-    throw new Error("The Gmail connection has expired. Please reconnect the account.");
+    throw new GmailReconnectRequiredError();
   }
 
-  const refreshed = await refreshAccessToken(gmailConfig(), decryptSecret(row.refresh_token_encrypted));
-  await adminDb()
+  let refreshed: GoogleTokenResponse;
+  try {
+    refreshed = await refreshAccessToken(gmailConfig(), decryptSecret(row.refresh_token_encrypted));
+  } catch (error) {
+    if (isInvalidGrant(error)) throw new GmailReconnectRequiredError();
+    throw error;
+  }
+  const { error: saveError } = await adminDb()
     .from("business_gmail_connections")
     .update({
       access_token_encrypted: encryptSecret(refreshed.access_token),
@@ -134,6 +157,10 @@ export async function getAccessToken(businessId: string): Promise<string> {
       scope: refreshed.scope ?? row.scope,
     })
     .eq("business_id", businessId);
+  if (saveError) {
+    // The fresh token still works for this request; the next call refreshes again.
+    console.error("[gmail] could not cache the refreshed access token", saveError.message);
+  }
 
   return refreshed.access_token;
 }

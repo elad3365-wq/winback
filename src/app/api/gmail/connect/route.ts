@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 import { requireBusinessContext } from "@/lib/business";
 import { gmailConfig, isGmailFeatureEnabled } from "@/lib/gmail/config";
@@ -13,14 +13,19 @@ import { createState } from "@/lib/gmail/oauth-state";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   if (!isGmailFeatureEnabled()) {
     return NextResponse.json({ error: "Gmail integration is not enabled." }, { status: 404 });
   }
 
   const { user, business } = await requireBusinessContext();
   if (business.owner_id !== user.id) {
-    return NextResponse.json({ error: "Only the business owner can connect Gmail." }, { status: 403 });
+    // A browser navigation lands here, so go back to the page with a readable
+    // reason instead of showing a raw JSON error.
+    const url = request.nextUrl.clone();
+    url.pathname = "/settings/email";
+    url.search = "?gmail_error=not_owner";
+    return NextResponse.redirect(url);
   }
 
   const state = createState(business.id, user.id);

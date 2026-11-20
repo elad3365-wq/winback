@@ -14,6 +14,9 @@ const ERROR_LABELS: Record<string, string> = {
   not_owner: "Only the business owner can connect the mailbox.",
   exchange_failed: "Google rejected the connection. Please try again.",
   access_denied: "You declined the Google permission request.",
+  missing_scope:
+    "WinBack needs permission to read your email. Connect again and leave the \"Read your email\" box ticked on Google's screen.",
+  save_failed: "Google approved the connection, but WinBack couldn't save it. Please try again or contact support.",
 };
 
 export function EmailConnection({

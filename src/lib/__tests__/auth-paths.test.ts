@@ -14,6 +14,9 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/cron/followups")).toBe(true);
     expect(isPublicPath("/api/cron/gmail-maintenance")).toBe(true);
     expect(isPublicPath("/api/gmail/push")).toBe(true);
+    // Verifies its own signed state + session; must not bounce Google's code to /login.
+    expect(isPublicPath("/api/gmail/callback")).toBe(true);
+    expect(isPublicPath("/api/gmail/callbackx")).toBe(false);
   });
 
   it("keeps app pages and user API routes protected", () => {
@@ -23,7 +26,6 @@ describe("isPublicPath", () => {
       "/settings",
       "/onboarding",
       "/api/gmail/connect",
-      "/api/gmail/callback",
       "/api/leads/123/ai-followup",
     ]) {
       expect(isPublicPath(p)).toBe(false);

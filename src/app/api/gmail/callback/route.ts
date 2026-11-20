@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getProfile } from "@/lib/gmail/api";
-import { gmailConfig, isGmailFeatureEnabled, isGmailPushConfigured } from "@/lib/gmail/config";
+import { gmailConfig, hasRequiredGmailScopes, isGmailFeatureEnabled, isGmailPushConfigured } from "@/lib/gmail/config";
 import { storeConnection } from "@/lib/gmail/connection";
 import { exchangeCodeForTokens } from "@/lib/gmail/oauth";
 import { verifyState } from "@/lib/gmail/oauth-state";
@@ -57,8 +57,18 @@ export async function GET(request: NextRequest) {
     return redirectToSettings(request, { gmail_error: "not_owner" });
   }
 
+  let tokens;
   try {
-    const tokens = await exchangeCodeForTokens(gmailConfig(), code);
+    tokens = await exchangeCodeForTokens(gmailConfig(), code);
+  } catch (error) {
+    console.error("[gmail/callback] code exchange failed", error instanceof Error ? error.message : error);
+    return redirectToSettings(request, { gmail_error: "exchange_failed" });
+  }
+  if (!hasRequiredGmailScopes(tokens.scope)) {
+    return redirectToSettings(request, { gmail_error: "missing_scope" });
+  }
+
+  try {
     const profile = await getProfile(tokens.access_token);
     // Token write goes through the service role inside storeConnection (users
     // have no write access to token columns). Ownership is already verified above.
@@ -77,8 +87,9 @@ export async function GET(request: NextRequest) {
         // non-fatal: reconciliation cron covers it
       }
     }
-  } catch {
-    return redirectToSettings(request, { gmail_error: "exchange_failed" });
+  } catch (error) {
+    console.error("[gmail/callback] could not store the connection", error instanceof Error ? error.message : error);
+    return redirectToSettings(request, { gmail_error: "save_failed" });
   }
 
   return redirectToSettings(request, { gmail_connected: "1" });

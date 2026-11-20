@@ -23,6 +23,18 @@ export const GMAIL_SCOPE_SEND = "https://www.googleapis.com/auth/gmail.send";
 /** The scopes requested during OAuth — least privilege for read + reply. */
 export const GMAIL_REQUESTED_SCOPES = [GMAIL_SCOPE_READONLY, GMAIL_SCOPE_SEND];
 
+/**
+ * Google's consent screen lets the user untick individual permissions. Without
+ * gmail.readonly nothing works (no sync, no profile), so the callback refuses
+ * such a grant and asks the owner to reconnect with it ticked. gmail.send is
+ * not required: sending is off during the beta. A missing `scope` field (older
+ * token responses) is treated as granted — the first API call will tell.
+ */
+export function hasRequiredGmailScopes(scope: string | null | undefined): boolean {
+  if (scope == null || scope.trim() === "") return true;
+  return scope.split(/\s+/).includes(GMAIL_SCOPE_READONLY);
+}
+
 export type GmailConfig = {
   clientId: string;
   clientSecret: string;

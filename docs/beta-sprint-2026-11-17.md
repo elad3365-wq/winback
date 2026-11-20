@@ -1,6 +1,6 @@
 # WinBack — 5-day beta sprint log (Nov 17–21, 2026)
 
-Sprint branches (stacked — each scheduled run is assigned its own branch): Day 1 `claude/lucid-johnson-w8p0do` (draft PR #4 → `platform`); Day 2 `claude/lucid-johnson-aiu1rq` (draft PR #5 → Day 1); Day 3 `claude/lucid-johnson-vk2ufp` (draft PR → Day 2). Merge in order #4 → #5 → Day 3, or squash the top branch into `platform`.
+Sprint branches (stacked — each scheduled run is assigned its own branch): Day 1 `claude/lucid-johnson-w8p0do` (draft PR #4 → `platform`); Day 2 `claude/lucid-johnson-aiu1rq` (draft PR #5 → Day 1); Day 3 `claude/lucid-johnson-vk2ufp` (draft PR #6 → Day 2); Day 4 `claude/lucid-johnson-v8qqwn` (draft PR → Day 3). Merge in order #4 → #5 → #6 → Day 4, or squash the top branch into `platform`.
 Draft PR target: `platform`. Environment: WinBack-Test (`onydgglobiouuusdiuhu`) only.
 Production DB (`yysmbjnspenslykzmlel`), `main`, and Production deploys were not touched.
 `WINBACK_GMAIL_ALLOW_SEND` stays off; no email was sent.
@@ -292,3 +292,145 @@ real API key (no key reachable from the session) — all AI tests use a mocked S
 
 Live E2E on Preview (blocked), a real model call on Preview, `crm_onboarding_flow.sql`,
 Gmail test-account OAuth, pilot docs and GO/NO-GO (Saturday).
+
+---
+
+## Day 4 — Friday, Nov 20 (Gmail integration & workflow automation)
+
+Branch `claude/lucid-johnson-v8qqwn` = Days 1–3 + this work. No database writes
+(read-only checks on WinBack-Test only). Production, `main`, Vercel settings and
+Gmail untouched. `WINBACK_GMAIL_ALLOW_SEND` stays off; nothing was sent, no
+Google account was connected, no real model call was made (mocks only).
+
+### Reviewed (code in `platform`)
+
+OAuth connect/callback (signed HMAC state, 10-min expiry, same-user + owner
+check), AES-256-GCM token encryption (tokens never selectable by users —
+confirmed on WinBack-Test), refresh, disconnect (stop watch → revoke → delete),
+inbox sync, History-API incremental sync with expired-cursor reset, Pub/Sub push
+webhook (constant-time token), watch renewal + daily maintenance cron, ingest
+idempotency on `(business_id, gmail_message_id)`, loop prevention (SENT/DRAFT/own
+address skipped), reply drafting, approval trigger, send gate, autopilot engine.
+The design is sound; the problems below are what I found and fixed.
+
+### Problems found
+
+1. **Owner "Generate AI reply" ignored the AI controls and knowledge base.** AI
+   *off* and the daily spend cap were not checked, the knowledge base was not
+   passed, unsubscribed customers could still get a draft, and there was no
+   output review (invented price / guarantee / time slot went straight into the
+   draft). Spend counted only follow-ups, not email replies.
+2. **Autopilot reply drafts had no output review either** — and an unverified
+   claim did not stop auto-send (auto-send is off globally, but fail-closed matters).
+3. **Push webhook mailbox lookup** used `ilike(email)` unescaped: `_` and `%` in an
+   address are wildcards (`info_sales@` also matches `infoXsales@`). And because
+   one mailbox can be connected to two businesses (no unique constraint — e.g.
+   an owner with two workspaces), `maybeSingle()` errored and push was silently
+   ignored for both. Error text was returned to the caller.
+4. **Gmail OAuth callback bounced to `/login` when the session lapsed during
+   Google consent**, carrying Google's one-time `code` onto `/login`, where the
+   stray-code rule forwards it to Supabase `/auth/callback` as a login code.
+5. **Revoked / expired Google grant** (`invalid_grant`) surfaced as a raw Google
+   error; the refreshed-token cache write ignored its error.
+6. **Partial consent**: Google lets users untick "Read your email"; the callback
+   accepted the grant and every sync would fail with 403.
+7. **Dead end while sending is off:** after approval the only button was
+   *Send reply*, which returned "… WINBACK_GMAIL_ALLOW_SEND is not on" (env var
+   name shown to customers). No way to record a reply sent by hand.
+8. **Raw Postgres/RLS/trigger text** shown in the email actions; linking to a
+   lead from another business surfaced a raw FK error; the link action's
+   `ai_audit_log` insert always failed silently (service-role-only table, same
+   as Day 3 finding 6); a non-owner hitting *Connect Gmail* saw raw JSON.
+9. Generating a reply did a full page reload to show the draft.
+
+### Fixed
+
+- `src/lib/gmail/reply.ts`: `finalizeReply()` runs `sanitizeDiscounts` +
+  `reviewDraft` (Day 3) on every reply; knowledge entries normalized/capped;
+  the linked lead's estimate and the knowledge base count as verified facts.
+- `settings/email/actions.ts` → `generateReplyAction`: AI key check, AI guard
+  (off / spend limit counting follow-ups **and** email replies), unsubscribed
+  lead → refused, knowledge base passed, review flags + usage stored in
+  `prompt_inputs`, inbound-only, friendly save errors, returns the draft so the
+  UI updates without a reload. Existing draft is reused (no second model call).
+- `src/lib/ai/autopilot/engine.ts`: stores review flags; any flag ⇒ never auto-send.
+- `src/app/api/gmail/push/route.ts` + `escapeLikePattern()` (`parse.ts`): escaped
+  exact match, processes every business on that mailbox, one failing business
+  doesn't block the rest, 500 (Pub/Sub retry) only if all fail, no error text out.
+- `src/lib/supabase/paths.ts`: `/api/gmail/callback` answers itself (it already
+  verifies the signed state and session) — invalid state now lands on
+  `/settings/email?gmail_error=invalid_state`, not `/login?code=…`.
+- `src/lib/gmail/connection.ts`: `GmailReconnectRequiredError` for no row / no
+  refresh token / `invalid_grant`; cache-write error logged.
+- `src/lib/gmail/errors.ts` (new): owner-safe messages for 401/403/429/5xx and
+  missing server config; used by sync / disconnect.
+- Callback: `hasRequiredGmailScopes()` → `gmail_error=missing_scope`; storage
+  failure → `save_failed` (both with readable messages in the UI).
+- Assisted send workflow (`email-inbox.tsx`): while sending is off, an approved
+  reply shows **Copy reply**, **Open in Gmail** (the original thread, in the
+  connected account) and **I sent it — mark as sent**
+  (`markReplySentManuallyAction`: owner-only, approved-only, same-business,
+  recorded via service role since users can't set `sent` — the DB trigger is
+  unchanged; `gmail_sent_message_id` stays null = sent by hand; lead timeline
+  entry). *Send reply* is shown only when sending is enabled and to the owner.
+  "Check before sending" flags appear above the draft.
+- Link to lead: checks the lead is in this business, verifies the lead update,
+  logs `customer_replied` / `customer_unsubscribed` to the timeline (not
+  `ai_audit_log`), reverts the dropdown on error, tells the owner follow-ups paused.
+- `/api/gmail/connect` for a non-owner → back to `/settings/email?gmail_error=not_owner`.
+
+### Tests (all ran in the session container)
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | pass |
+| `eslint .` | pass |
+| `vitest` | **287 / 287 pass** (38 files; +38 new: Gmail hardening ×16, email actions ×16, push webhook ×6; auth-paths updated) |
+| `next build` | pass |
+| `next start` smoke (Gmail flag on, dummy non-secret config, no Supabase): callback bad state → `/settings/email?gmail_error=invalid_state`; callback `error=access_denied` → `gmail_error=access_denied`; `/api/gmail/connect`, `/settings/email` → 307 `/login`; push wrong token → 401, right token + bad body → 200 ignored; `/api/cron/gmail-maintenance` → 401 | pass |
+| WinBack-Test read-only: marker present; RLS on all Gmail/AI tables; token columns not selectable and no user write grants on `business_gmail_connections`; users may update only `lead_id` on messages and `status/body/lead_id` on replies; integrity trigger present; idempotency + composite tenant FKs present; push columns (0013) present; `create_business` + 4 lead-isolation triggers still present | pass |
+| WinBack-Test data: 0 Gmail connections, 0 messages, 0 replies | Gmail has **never been exercised** on Test |
+| Live OAuth / sync / push with a real Google test account | **NOT RUN** — see blockers |
+
+### Not done / found but not changed
+
+- **Automatic matching of incoming email to leads is not possible today:**
+  `leads` has no email column (verified on WinBack-Test), so a message only gets a
+  lead when the owner picks one from the dropdown. Adding it needs an additive
+  migration (`leads.email text null` + index) and an email field in the lead
+  form — a schema change, so left for owner approval (good post-beta item).
+- One mailbox may be connected to several businesses; each then stores its own
+  copy of that mail. Intended for multi-workspace owners — confirm.
+- Watch renewal runs only from the daily cron; a missed day still leaves >2 days
+  of margin (renew threshold 2 days, watch lifetime 7).
+
+### Blockers (need the owner)
+
+1. **Gmail live test** needs, on Preview only: `WINBACK_GMAIL_ENABLED=true`,
+   `GOOGLE_GMAIL_CLIENT_ID/SECRET`, `GOOGLE_GMAIL_REDIRECT_URI` =
+   `https://<preview-host>/api/gmail/callback` (also added in the Google Cloud
+   OAuth client), `GMAIL_TOKEN_ENCRYPTION_KEY` (64 hex chars, new — not reused
+   from Ops), `SUPABASE_SERVICE_ROLE_KEY` (Test project), and a Google test
+   user on the OAuth consent screen. Optional push: `GMAIL_PUBSUB_TOPIC`,
+   `GMAIL_PUSH_TOKEN`, a push subscription to `/api/gmail/push?token=…`, and
+   Publisher for `gmail-api-push@system.gserviceaccount.com`. Keep
+   `WINBACK_GMAIL_ALLOW_SEND` unset.
+2. **Vercel connector** still 404 for `prj_CMGZpI4AwEahwicobp9W3UgHbDhR` (re-checked
+   today) — Preview env presence/targets still unverified.
+3. Still open: run `supabase/tests/crm_onboarding_flow.sql`, review the hardening
+   SQL, Supabase Auth settings, network allowlist for `*.supabase.co` / `*.vercel.app`.
+
+### Next run (Sat, Nov 21) — release readiness
+
+- Full journey review (signup → business → leads → AI draft → approve → mark
+  sent), desktop + mobile viewports where reachable; loading/empty/error states.
+- Pilot pack: 14-day free pilot terms (no card), onboarding guide, welcome email
+  template (not sent), feedback process, pilot metrics + queries.
+- Final GO / NO-GO report; list everything needing approval before production.
+- After Nov 21: no further changes under this sprint; disable the schedule.
+
+### Remaining for the free beta
+
+Live E2E on Preview (blocked), a real model call on Preview, `crm_onboarding_flow.sql`,
+Gmail test-account OAuth (optional for beta — the assisted SMS/copy workflow works
+without Gmail), pilot docs and GO/NO-GO (Saturday).

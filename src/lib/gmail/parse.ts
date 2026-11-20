@@ -185,3 +185,11 @@ export function parsePubSubPush(body: unknown): PubSubNotification | null {
   if (!hist) return null;
   return { emailAddress, historyId: hist };
 }
+
+/**
+ * Escape LIKE/ILIKE wildcards so an address such as `info_sales@x.com` matches
+ * only itself (in a LIKE pattern `_` matches any character and `%` any run).
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
