@@ -7,6 +7,7 @@ import {
   cancelReplyAction,
   generateReplyAction,
   linkMessageToLeadAction,
+  markReplySentManuallyAction,
   saveReplyEditAction,
   sendReplyAction,
 } from "@/app/(app)/settings/email/actions";
@@ -14,6 +15,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, Textarea } from "@/components/ui/field";
+import type { ReviewFlag } from "@/lib/ai/review";
 import type { GmailReplyStatus } from "@/lib/database.types";
 
 export type InboxItem = {
@@ -25,9 +27,25 @@ export type InboxItem = {
     bodyText: string | null;
     internalDate: string | null;
     leadId: string | null;
+    gmailThreadId: string | null;
   };
-  reply: { id: string; status: GmailReplyStatus; body: string } | null;
+  reply: { id: string; status: GmailReplyStatus; body: string; flags: ReviewFlag[]; sentManually?: boolean } | null;
 };
+
+export type InboxOptions = {
+  /** WINBACK_GMAIL_ALLOW_SEND is on. Off during the beta: the owner sends from Gmail. */
+  sendEnabled: boolean;
+  /** Connected mailbox, used to open the right Google account. */
+  mailbox: string | null;
+  isOwner: boolean;
+};
+
+/** Link to the original conversation in Gmail, in the connected account. */
+export function gmailThreadUrl(threadId: string | null, mailbox: string | null): string | null {
+  if (!threadId || !/^[0-9a-f]+$/i.test(threadId)) return null;
+  const account = mailbox ? `?authuser=${encodeURIComponent(mailbox)}` : "";
+  return `https://mail.google.com/mail/u/${account}#all/${threadId}`;
+}
 
 type LeadOption = { id: string; name: string };
 
@@ -37,7 +55,7 @@ function when(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
 }
 
-function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
+function MessageRow({ item, leads, options }: { item: InboxItem; leads: LeadOption[]; options: InboxOptions }) {
   const [pending, startTransition] = useTransition();
   const [reply, setReply] = useState(item.reply);
   const [body, setBody] = useState(item.reply?.body ?? "");
@@ -47,6 +65,16 @@ function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
   const msg = item.message;
   const status = reply?.status ?? null;
   const editable = status === null || status === "draft" || status === "edited";
+  const threadUrl = gmailThreadUrl(msg.gmailThreadId, options.mailbox);
+
+  async function copyReply() {
+    try {
+      await navigator.clipboard.writeText(body);
+      setNotice({ tone: "success", text: "Copied. Paste it as your reply in Gmail, then click \"I sent it\"." });
+    } catch {
+      setNotice({ tone: "error", text: "Couldn't copy automatically — select the text and copy it." });
+    }
+  }
 
   function run(fn: () => Promise<{ error?: string; ok?: boolean }>, onOk?: () => void, okText?: string) {
     startTransition(async () => {
@@ -77,7 +105,19 @@ function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
               onChange={(e) => {
                 const next = e.target.value;
                 setLeadId(next);
-                run(() => linkMessageToLeadAction(msg.id, next || null), undefined, "Linked.");
+                const previous = leadId;
+                startTransition(async () => {
+                  const result = await linkMessageToLeadAction(msg.id, next || null);
+                  if (result.error) {
+                    setLeadId(previous);
+                    setNotice({ tone: "error", text: result.error });
+                  } else {
+                    setNotice({
+                      tone: "success",
+                      text: next ? "Linked. Automatic follow-ups for this lead are paused because they replied." : "Unlinked.",
+                    });
+                  }
+                });
               }}
             >
               <option value="">— none —</option>
@@ -95,7 +135,9 @@ function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
           {status === "sent" ? (
             <>
-              <p className="mb-2 text-xs font-medium text-emerald-700">Reply sent</p>
+              <p className="mb-2 text-xs font-medium text-emerald-700">
+                Reply sent{reply?.sentManually ? " (from Gmail)" : ""}
+              </p>
               <p className="whitespace-pre-wrap text-sm text-slate-700">{body}</p>
             </>
           ) : reply ? (
@@ -105,6 +147,19 @@ function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
                   AI reply draft{status === "approved" ? " · approved" : ""}
                 </span>
               </div>
+              {reply.flags.length > 0 ? (
+                <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                  <p className="font-medium">Check before sending</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                    {reply.flags.map((f, i) => (
+                      <li key={`${f.kind}-${i}`}>
+                        {f.message}
+                        {f.match ? <span className="text-amber-700"> (&ldquo;{f.match}&rdquo;)</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               <Textarea
                 value={body}
                 rows={5}
@@ -135,7 +190,7 @@ function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
                     </Button>
                   </>
                 ) : null}
-                {status === "approved" ? (
+                {status === "approved" && options.sendEnabled && options.isOwner ? (
                   <Button
                     size="sm"
                     disabled={pending}
@@ -143,6 +198,39 @@ function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
                   >
                     Send reply
                   </Button>
+                ) : null}
+                {status === "approved" && !options.sendEnabled ? (
+                  <>
+                    <Button size="sm" disabled={pending} onClick={copyReply}>
+                      Copy reply
+                    </Button>
+                    {threadUrl ? (
+                      <a
+                        href={threadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Open in Gmail
+                      </a>
+                    ) : null}
+                    {options.isOwner ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={pending}
+                        onClick={() =>
+                          run(
+                            () => markReplySentManuallyAction(reply.id),
+                            () => setReply({ ...reply, status: "sent", body, sentManually: true }),
+                            "Marked as sent.",
+                          )
+                        }
+                      >
+                        I sent it — mark as sent
+                      </Button>
+                    ) : null}
+                  </>
                 ) : null}
                 <Button
                   size="sm"
@@ -159,17 +247,16 @@ function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
               size="sm"
               disabled={pending}
               onClick={() =>
-                run(
-                  async () => {
-                    const result = await generateReplyAction(msg.id);
-                    if (result.data?.replyId) {
-                      // We don't have the generated body client-side; reload to show it.
-                      window.location.reload();
-                    }
-                    return result;
-                  },
-                  undefined,
-                )
+                run(async () => {
+                  const result = await generateReplyAction(msg.id);
+                  const created = result.data;
+                  if (created?.replyId) {
+                    const text = created.body ?? "";
+                    setReply({ id: created.replyId, status: "draft", body: text, flags: created.flags ?? [] });
+                    setBody(text);
+                  }
+                  return result;
+                })
               }
             >
               {pending ? "Generating…" : "Generate AI reply"}
@@ -183,7 +270,7 @@ function MessageRow({ item, leads }: { item: InboxItem; leads: LeadOption[] }) {
   );
 }
 
-export function EmailInbox({ items, leads }: { items: InboxItem[]; leads: LeadOption[] }) {
+export function EmailInbox({ items, leads, options }: { items: InboxItem[]; leads: LeadOption[]; options: InboxOptions }) {
   if (items.length === 0) {
     return (
       <Card>
@@ -196,7 +283,7 @@ export function EmailInbox({ items, leads }: { items: InboxItem[]; leads: LeadOp
   return (
     <div className="space-y-3">
       {items.map((item) => (
-        <MessageRow key={item.message.id} item={item} leads={leads} />
+        <MessageRow key={item.message.id} item={item} leads={leads} options={options} />
       ))}
     </div>
   );

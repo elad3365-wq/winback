@@ -2,12 +2,14 @@ import Link from "next/link";
 
 import { EmailConnection } from "@/components/settings/email-connection";
 import { EmailInbox, type InboxItem } from "@/components/settings/email-inbox";
+import { parseReviewFlags } from "@/lib/ai/review";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { requireOnboardedContext } from "@/lib/business";
 import type { BusinessEmailReply } from "@/lib/database.types";
 import { gmailRuntimeWarnings, isGmailFeatureEnabled } from "@/lib/gmail/config";
 import { getConnectionStatus } from "@/lib/gmail/connection";
+import { sendingAllowedGlobally } from "@/lib/gmail/send";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +21,7 @@ export default async function EmailSettingsPage({
 }: {
   searchParams: Promise<{ gmail_connected?: string; gmail_error?: string }>;
 }) {
-  const { business } = await requireOnboardedContext();
+  const { user, business } = await requireOnboardedContext();
   const sp = await searchParams;
 
   if (!isGmailFeatureEnabled()) {
@@ -91,14 +93,19 @@ export default async function EmailSettingsPage({
       bodyText: m.body_text,
       internalDate: m.internal_date,
       leadId: m.lead_id,
+      gmailThreadId: m.gmail_thread_id,
     },
-    reply: repliesByMessage.get(m.id)
-      ? {
-          id: repliesByMessage.get(m.id)!.id,
-          status: repliesByMessage.get(m.id)!.status,
-          body: repliesByMessage.get(m.id)!.body,
-        }
-      : null,
+    reply: (() => {
+      const r = repliesByMessage.get(m.id);
+      if (!r) return null;
+      return {
+        id: r.id,
+        status: r.status,
+        body: r.body,
+        flags: parseReviewFlags((r.prompt_inputs as { review_flags?: unknown } | null)?.review_flags),
+        sentManually: r.status === "sent" && !r.gmail_sent_message_id,
+      };
+    })(),
   }));
 
   return (
@@ -123,7 +130,15 @@ export default async function EmailSettingsPage({
       />
 
       {status.connected ? (
-        <EmailInbox items={items} leads={(leads ?? []).map((l) => ({ id: l.id, name: l.customer_name }))} />
+        <EmailInbox
+          items={items}
+          leads={(leads ?? []).map((l) => ({ id: l.id, name: l.customer_name }))}
+          options={{
+            sendEnabled: sendingAllowedGlobally(),
+            mailbox: status.email,
+            isOwner: business.owner_id === user.id,
+          }}
+        />
       ) : null}
     </div>
   );

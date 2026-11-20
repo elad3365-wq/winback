@@ -2,7 +2,8 @@ import "server-only";
 
 import type { AiTone } from "@/lib/database.types";
 import { completeText, type FollowupGeneration } from "@/lib/ai/anthropic";
-import { sanitizeDiscounts } from "@/lib/ai/followup";
+import { mentionsDiscount, normalizeKnowledge, sanitizeDiscounts } from "@/lib/ai/followup";
+import { reviewDraft, type ReviewFlag } from "@/lib/ai/review";
 
 /**
  * AI email-reply drafting for a per-business Gmail inbox. Same guardrails as the
@@ -103,8 +104,8 @@ export function buildReplyPrompt(inputs: ReplyInputs): { system: string; user: s
     inputs.businessHours?.trim() ? `Business hours: ${inputs.businessHours.trim()}` : null,
     inputs.additionalRules?.trim() ? `Additional business rules to honour: ${inputs.additionalRules.trim()}` : null,
     ...leadFacts,
-    ...(inputs.knowledge && inputs.knowledge.length > 0
-      ? ["Verified business knowledge you may use:", ...inputs.knowledge.map((k) => `- ${k}`)]
+    ...(normalizeKnowledge(inputs.knowledge).length > 0
+      ? ["Verified business knowledge you may use:", ...normalizeKnowledge(inputs.knowledge).map((k) => `- ${k}`)]
       : []),
   ]
     .filter(Boolean)
@@ -132,13 +133,48 @@ export function buildReplyPrompt(inputs: ReplyInputs): { system: string; user: s
   return { system, user };
 }
 
-export type ReplyGeneration = FollowupGeneration & { discountOffered: boolean };
+/**
+ * Everything the owner has verified for this reply (hours, rules, knowledge
+ * base, the linked lead's estimate). The output review treats numbers and
+ * claims found here as "known".
+ */
+export function replyVerifiedText(inputs: ReplyInputs): string {
+  return [inputs.businessHours ?? "", inputs.additionalRules ?? "", ...normalizeKnowledge(inputs.knowledge)].join("\n");
+}
 
-/** Generate a reply draft. Applies the discount sanitizer to the model output. */
+export type ReplyGeneration = FollowupGeneration & {
+  discountOffered: boolean;
+  /** Claims the owner must check before sending (unverified price, guarantee, time slot, …). */
+  flags: ReviewFlag[];
+};
+
+/**
+ * Post-process a raw model reply with the same rules as follow-up drafts:
+ * disallowed discounts and discounts above the ceiling are removed; unverified
+ * prices / guarantees / time slots / financing are flagged for the owner.
+ */
+export function finalizeReply(raw: string, inputs: ReplyInputs): { content: string; discountOffered: boolean; flags: ReviewFlag[] } {
+  const allowDiscount = replyDiscountsAllowed(inputs);
+  const sanitized = sanitizeDiscounts(raw, allowDiscount);
+  const review = reviewDraft(sanitized.text, {
+    estimateAmount: inputs.lead?.estimateAmount ?? Number.NaN,
+    discountsAllowed: allowDiscount,
+    maximumDiscountPercent: inputs.maximumDiscountPercent,
+    financingAvailable: inputs.financingAvailable,
+    paymentPlansAvailable: inputs.paymentPlansAvailable,
+    verifiedText: replyVerifiedText(inputs),
+  });
+  return {
+    content: review.text,
+    discountOffered: allowDiscount && mentionsDiscount(review.text),
+    flags: review.flags,
+  };
+}
+
+/** Generate a reply draft and run the output review on it. */
 export async function generateReply(inputs: ReplyInputs): Promise<ReplyGeneration> {
   const { system, user } = buildReplyPrompt(inputs);
   const result = await completeText(system, user);
-  const allowDiscount = replyDiscountsAllowed(inputs);
-  const { text, mentionedDiscount } = sanitizeDiscounts(result.content, allowDiscount);
-  return { content: text, model: result.model, discountOffered: allowDiscount && mentionedDiscount };
+  const { content, discountOffered, flags } = finalizeReply(result.content, inputs);
+  return { content, model: result.model, usage: result.usage, discountOffered, flags };
 }
