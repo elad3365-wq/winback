@@ -114,6 +114,15 @@ describe("generateReplyAction", () => {
     expect(generateReply).not.toHaveBeenCalled();
   });
 
+  it("refuses a lead whose status the owner set to Unsubscribed", async () => {
+    queue("business_email_messages", { data: { ...INBOUND, lead_id: "lead-1" }, error: null });
+    queue("business_email_replies", { data: null, error: null }, { data: null, error: null, count: 0 });
+    queueContext({ lead: { customer_name: "Dana", service: "Drain", estimate_amount: 149, status: "unsubscribed", unsubscribe_status: "subscribed" } });
+    const result = await generateReplyAction("msg-1");
+    expect(result.error).toMatch(/unsubscribed/);
+    expect(generateReply).not.toHaveBeenCalled();
+  });
+
   it("passes the knowledge base to the model and stores review flags with the draft", async () => {
     queue("business_email_messages", { data: INBOUND, error: null });
     queue("business_email_replies", { data: null, error: null }, { data: null, error: null, count: 0 }, { data: { id: "r-new" }, error: null });

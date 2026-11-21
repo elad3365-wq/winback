@@ -59,10 +59,11 @@ export function classifyAiError(error: unknown): AiFailureKind {
 
 /** Owner-facing message for each failure kind (no provider internals leak). */
 export const AI_FAILURE_MESSAGES: Record<AiFailureKind, string> = {
-  not_configured: "AI is not configured yet. Add the ANTHROPIC_API_KEY environment variable.",
+  not_configured:
+    "AI is not configured yet for this workspace. You can still write the message yourself; ask the WinBack team to turn AI on.",
   rate_limited: "The AI service is busy right now. Wait a minute and try again.",
   auth: "The AI service rejected this deployment's API key. Ask the WinBack admin to check it.",
-  bad_request: "The AI model configuration is invalid. Ask the WinBack admin to check WINBACK_FOLLOWUP_MODEL.",
+  bad_request: "The AI model configuration is invalid. Ask the WinBack team to check the AI model setting.",
   refusal: "The AI declined to write this message. Try again, or write it yourself.",
   truncated: "The AI response was cut off. Please try again.",
   empty: "Couldn't generate a usable message. Please try again.",

@@ -20,6 +20,7 @@ import { parseReviewFlags, type ReviewFlag } from "@/lib/ai/review";
 import { generateReply, type ReplyInputs } from "@/lib/gmail/reply";
 import { sendApprovedReply, sendingAllowedGlobally } from "@/lib/gmail/send";
 import { syncInbox } from "@/lib/gmail/sync";
+import { isLeadUnsubscribed } from "@/lib/leads";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -181,7 +182,7 @@ export async function generateReplyAction(
       message.lead_id
         ? supabase
             .from("leads")
-            .select("customer_name, service, estimate_amount, unsubscribe_status")
+            .select("customer_name, service, estimate_amount, status, unsubscribe_status")
             .eq("id", message.lead_id)
             .eq("business_id", business.id)
             .maybeSingle()
@@ -210,7 +211,7 @@ export async function generateReplyAction(
         .gte("created_at", dayStart),
     ]);
 
-  if (lead.data?.unsubscribe_status === "unsubscribed") {
+  if (isLeadUnsubscribed(lead.data)) {
     return { error: "This customer unsubscribed — WinBack won't draft messages to them." };
   }
 

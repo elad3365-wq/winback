@@ -114,6 +114,12 @@ describe("POST /api/leads/[leadId]/ai-followup", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it("refuses a lead the owner moved to the Unsubscribed status by hand", async () => {
+    setup({ lead: { ...lead, status: "unsubscribed", unsubscribe_status: "subscribed" } });
+    expect((await call()).status).toBe(409);
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("returns a friendly error and saves nothing when the model refuses", async () => {
     setup();
     const { AiGenerationError } = await import("@/lib/ai/anthropic");

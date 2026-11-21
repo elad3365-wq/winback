@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  readBetaFormValues,
   validateBetaSignup,
   type BetaFormState,
 } from "@/components/marketing/beta-form-state";
@@ -20,12 +21,13 @@ export async function submitBetaAction(
   _prevState: BetaFormState,
   formData: FormData,
 ): Promise<BetaFormState> {
+  const values = readBetaFormValues(formData);
   const parsed = validateBetaSignup(formData);
-  if (!parsed.ok) return { status: "error", error: parsed.error };
+  if (!parsed.ok) return { status: "error", error: parsed.error, values };
 
   if (!isSupabaseConfigured()) {
     console.error("beta_signups: Supabase is not configured; signup NOT saved.");
-    return { status: "error", error: SAVE_FAILED };
+    return { status: "error", error: SAVE_FAILED, values };
   }
 
   try {
@@ -35,11 +37,11 @@ export async function submitBetaAction(
     const { error } = await supabase.from("beta_signups").insert(parsed.value);
     if (error) {
       console.error("beta_signups insert failed:", error.code, error.message);
-      return { status: "error", error: SAVE_FAILED };
+      return { status: "error", error: SAVE_FAILED, values };
     }
   } catch (err) {
     console.error("beta_signups insert threw:", err);
-    return { status: "error", error: SAVE_FAILED };
+    return { status: "error", error: SAVE_FAILED, values };
   }
 
   return { status: "success", submittedAt: Date.now() };

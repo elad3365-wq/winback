@@ -65,9 +65,29 @@ describe("submitBetaAction", () => {
 
   it("validates input before touching the database", async () => {
     const res = await submitBetaAction(INITIAL_BETA_FORM_STATE, form({ email: "nope" }));
-    expect(res).toEqual({ status: "error", error: "Please enter a valid email address." });
+    expect(res.status).toBe("error");
+    expect(res.error).toBe("Please enter a valid email address.");
     const long = await submitBetaAction(INITIAL_BETA_FORM_STATE, form({ name: "x".repeat(201) }));
     expect(long.status).toBe("error");
     expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("echoes the typed values back on every error so the form is not wiped", async () => {
+    const invalid = await submitBetaAction(INITIAL_BETA_FORM_STATE, form({ email: "nope" }));
+    expect(invalid.values).toEqual({
+      name: "Dana Test",
+      business_name: "Fictional Roofing",
+      email: "nope",
+      business_type: "Roofing",
+    });
+
+    insert.mockResolvedValue({ error: { code: "08006", message: "connection failure" } });
+    const failed = await submitBetaAction(INITIAL_BETA_FORM_STATE, form());
+    expect(failed.status).toBe("error");
+    expect(failed.values?.email).toBe("Dana@Example.com");
+
+    insert.mockResolvedValue({ error: null });
+    const ok = await submitBetaAction(INITIAL_BETA_FORM_STATE, form());
+    expect(ok.values).toBeUndefined();
   });
 });
