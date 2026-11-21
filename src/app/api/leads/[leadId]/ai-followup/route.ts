@@ -17,6 +17,7 @@ import {
 import { canGenerateDraft, resolveAiPolicy, utcDayStartIso } from "@/lib/ai/guard";
 import { resolveFollowupModel } from "@/lib/ai/models";
 import { reviewDraft } from "@/lib/ai/review";
+import { isLeadUnsubscribed } from "@/lib/leads";
 import { createClient } from "@/lib/supabase/server";
 
 // Uses the Anthropic SDK and the request cookies, so it must run on Node.js and
@@ -51,10 +52,9 @@ export async function POST(
   // Fail fast with a clear message rather than a provider error if the key is
   // missing on this deployment.
   if (!isAiConfigured()) {
-    return json(
-      { error: "AI is not configured yet. Add the ANTHROPIC_API_KEY environment variable." },
-      503,
-    );
+    // The env var name is for the deployment admin (server log), not the owner.
+    console.error("ai-followup: ANTHROPIC_API_KEY is not set on this deployment.");
+    return json({ error: AI_FAILURE_MESSAGES.not_configured }, 503);
   }
 
   const body = (await request.json().catch(() => ({}))) as { channel?: unknown };
@@ -74,7 +74,7 @@ export async function POST(
   if (!lead) {
     return json({ error: "Lead not found." }, 404);
   }
-  if (lead.unsubscribe_status === "unsubscribed") {
+  if (isLeadUnsubscribed(lead)) {
     return json({ error: "This customer unsubscribed — WinBack won't draft follow-ups for them." }, 409);
   }
 

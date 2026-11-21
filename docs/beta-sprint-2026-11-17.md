@@ -1,6 +1,6 @@
 # WinBack — 5-day beta sprint log (Nov 17–21, 2026)
 
-Sprint branches (stacked — each scheduled run is assigned its own branch): Day 1 `claude/lucid-johnson-w8p0do` (draft PR #4 → `platform`); Day 2 `claude/lucid-johnson-aiu1rq` (draft PR #5 → Day 1); Day 3 `claude/lucid-johnson-vk2ufp` (draft PR #6 → Day 2); Day 4 `claude/lucid-johnson-v8qqwn` (draft PR → Day 3). Merge in order #4 → #5 → #6 → Day 4, or squash the top branch into `platform`.
+Sprint branches (stacked — each scheduled run is assigned its own branch): Day 1 `claude/lucid-johnson-w8p0do` (draft PR #4 → `platform`); Day 2 `claude/lucid-johnson-aiu1rq` (draft PR #5 → Day 1); Day 3 `claude/lucid-johnson-vk2ufp` (draft PR #6 → Day 2); Day 4 `claude/lucid-johnson-v8qqwn` (draft PR #7 → Day 3); Day 5 `claude/lucid-johnson-hgdgkq` (draft PR → Day 4). Merge in order #4 → #5 → #6 → #7 → Day 5, or squash the top branch (`claude/lucid-johnson-hgdgkq`, which contains all five days) into `platform`.
 Draft PR target: `platform`. Environment: WinBack-Test (`onydgglobiouuusdiuhu`) only.
 Production DB (`yysmbjnspenslykzmlel`), `main`, and Production deploys were not touched.
 `WINBACK_GMAIL_ALLOW_SEND` stays off; no email was sent.
@@ -434,3 +434,107 @@ The design is sound; the problems below are what I found and fixed.
 Live E2E on Preview (blocked), a real model call on Preview, `crm_onboarding_flow.sql`,
 Gmail test-account OAuth (optional for beta — the assisted SMS/copy workflow works
 without Gmail), pilot docs and GO/NO-GO (Saturday).
+
+---
+
+## Day 5 — Saturday, Nov 21 (release readiness) — FINAL
+
+Branch `claude/lucid-johnson-hgdgkq` = Days 1–4 + this work. Read-only queries
+on WinBack-Test only. Production, `main`, Vercel settings and Gmail untouched;
+nothing sent, nobody contacted.
+
+**Verdict: NO-GO to invite today; conditional GO** once the 8-item gate in
+`docs/beta-go-no-go-2026-11-21.md` is done (no new code needed). Main reason:
+WinBack-Test has **0 users / 0 businesses / 0 leads / 0 beta signups** — the
+journey has never been completed on any deployment, and this sprint could not
+reach one.
+
+### Re-checked access (unchanged)
+
+- Vercel connector: `get_project` 404 for `prj_CMGZpI4AwEahwicobp9W3UgHbDhR`;
+  `web_fetch_vercel_url` on the platform Preview → 404 "lookup_deployment".
+- Network policy: `winback-git-platform-fragra-mood.vercel.app` and
+  `onydgglobiouuusdiuhu.supabase.co` → proxy 403.
+- Supabase connector: read-only queries work; `crm_onboarding_flow.sql` again
+  timed out waiting for a confirmation nobody could give (not retried).
+
+### Problems found and fixed
+
+1. **Manual "Unsubscribed" status was ignored by every drafting path except the
+   cron.** The *Generate AI Follow-up* route, the Gmail reply action, the
+   autopilot engine and the lead page only checked the `unsubscribe_status`
+   flag (set by Gmail opt-out detection). An owner who moved a customer to
+   *Unsubscribed* could still get drafts for them, and the lead page said
+   "Subscribed". New `isLeadUnsubscribed()` (`src/lib/leads.ts`) treats either
+   signal as opted out; used in all four places + the AI panel.
+2. **Beta form wiped everything the visitor typed on any error** (React resets
+   a form after its action). With Day 1's honest error, a database hiccup meant
+   retyping the whole form. The action now echoes the values back and the form
+   refills (`beta-form-state.ts`, `beta-actions.ts`, `beta-form.tsx`).
+   Verified in Chromium at 375 px: error shown, values kept after error and
+   after a retry, no false "Thanks for applying".
+3. **Customers were told to "Add the ANTHROPIC_API_KEY environment variable"**
+   when AI isn't configured (and "check WINBACK_FOLLOWUP_MODEL" on a bad model).
+   Now owner-safe text; the env var name goes to the server log only.
+4. **E2E fixture could never add a lead:** `addLead()` clicked a "Save" button
+   that doesn't exist on the create form (it's "Add lead" — also true on
+   `platform`), so `leads-ai` and `tenant-isolation` specs would have failed at
+   step one once Preview access existed. Now clicks the dialog's "Add lead".
+
+### Added
+
+- `docs/beta-go-no-go-2026-11-21.md` — evidence, gaps, 8-item gate, approvals
+  needed before production, known limitations, risk register.
+- `docs/pilot/PILOT_PLAN.md` — 5 businesses, 14 days, no card; plain-language
+  terms; timeline; metric definitions + targets; feedback process (check-in
+  questions, end-of-pilot form, stop-the-pilot severity rule).
+- `docs/pilot/WELCOME_EMAIL.md` — template, **not sent**.
+- `docs/pilot/ONBOARDING_GUIDE.md` — 1-page quick start (claims checked
+  against the UI labels in code).
+- `supabase/reports/pilot_metrics.sql` — read-only weekly metrics
+  (registrations, applications, onboarding, activated businesses, leads, AI
+  drafts, approved/sent, weekly active, recovered). **Ran on WinBack-Test:
+  executes, all 0.**
+
+### Tests (all ran in the session container)
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | pass |
+| `eslint .` | pass |
+| `vitest` | **291 / 291 pass** (38 files; +4: beta values echo, helper, route + email action manual-unsubscribe). The new route test was confirmed to **fail** with the old check and pass with the fix |
+| `next build` | pass |
+| `playwright test --list` | 6 specs in 4 files load (not run: no reachable deployment) |
+| Chromium viewport check (1280×800, 375×740) on `next start`: `/`, `/login`, `/signup`, `/forgot-password`, `/privacy`, `/terms`, `/dashboard`→login | pass — no overflow, no console errors |
+| Beta form in browser (placeholder, unreachable Supabase) | error shown, no false success, values kept |
+| WinBack-Test read-only: `create_business` + `ensure_lead_in_business` present (SECURITY DEFINER) | pass |
+| `crm_onboarding_flow.sql` | **NOT RUN** (confirmation timeout) |
+| Live E2E / real AI call / Gmail | **NOT RUN** (blocked) |
+
+### Sprint summary (Nov 17–21)
+
+- Tests: 171 → **291** unit/integration tests, all passing; DB isolation test 34/34.
+- Fixed: false beta-signup success, auth proxy blocking crons/push and hijacking
+  Gmail OAuth, open redirect, RLS "0 rows = success" in every CRM write, raw DB
+  errors shown to owners, emergency stop / AI-off / spend caps ignored by the
+  scheduled cron, unused knowledge base, unchecked AI claims, truncated/refused
+  AI output saved as drafts, missing discard / mark-as-sent flows, Gmail reply
+  guardrails, push-webhook wildcard lookup, partial-consent and revoked-grant
+  handling, manual unsubscribe ignored, beta form wiping input, env-var names
+  shown to owners, broken E2E fixture.
+- Never done: any Production change, any send, any contact, any spend.
+
+### Still open (owner)
+
+See the Gate and approvals list in `docs/beta-go-no-go-2026-11-21.md`. In short:
+grant Vercel connector access (or test yourself), run the 10-minute journey and
+`npm run e2e`, run `crm_onboarding_flow.sql`, check Supabase Auth settings,
+review the hardening SQL, decide the pilot environment, merge the stacked PRs.
+
+### Schedule
+
+This was the final scheduled run. **No further repository or database changes
+will be made under this sprint.** The routine cannot disable its own schedule
+from inside the session — please disable or delete the scheduled task in
+Claude Code (claude.ai/code → Routines / scheduled tasks).
+

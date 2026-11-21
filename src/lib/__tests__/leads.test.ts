@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Lead } from "@/lib/database.types";
 import {
+  isLeadUnsubscribed,
   buildDailySeries,
   dashboardMetrics,
   daysOverdue,
@@ -156,5 +157,14 @@ describe("sortLeads", () => {
   });
   it("recently contacted: most recent last_follow_up_at first, nulls last", () => {
     expect(sortLeads([a, b, c], "recent_contact").map((l) => l.id)).toEqual(["c", "a", "b"]);
+  });
+});
+
+describe("isLeadUnsubscribed", () => {
+  it("honours both the opt-out flag and a manual Unsubscribed status", () => {
+    expect(isLeadUnsubscribed({ status: "new", unsubscribe_status: "unsubscribed" })).toBe(true);
+    expect(isLeadUnsubscribed({ status: "unsubscribed", unsubscribe_status: "subscribed" })).toBe(true);
+    expect(isLeadUnsubscribed({ status: "lost", unsubscribe_status: "subscribed" })).toBe(false);
+    expect(isLeadUnsubscribed(null)).toBe(false);
   });
 });

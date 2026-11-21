@@ -16,6 +16,7 @@ import { Field, Select, Textarea } from "@/components/ui/field";
 import { smsHref } from "@/lib/ai/manual-send";
 import type { ReviewFlag } from "@/lib/ai/review";
 import type { Lead } from "@/lib/database.types";
+import { isLeadUnsubscribed } from "@/lib/leads";
 
 type Channel = "sms" | "email";
 type Status = "draft" | "edited" | "approved" | "sent";
@@ -63,7 +64,7 @@ export function AiFollowup({ lead, initial }: { lead: Lead; initial?: InitialAiM
   const [copied, setCopied] = useState(false);
 
   const busy = pending !== null;
-  const unsubscribed = lead.unsubscribe_status === "unsubscribed";
+  const unsubscribed = isLeadUnsubscribed(lead);
   const isApproved = status === "approved";
   const isSent = status === "sent";
   const isLocked = isApproved || isSent;

@@ -93,7 +93,7 @@ export async function completeOnboarding(page: Page, biz: BusinessSeed): Promise
   await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
 }
 
-/** Add a lead via the dashboard "Add lead" form. */
+/** Add a lead via the Leads page "Add lead" dialog. */
 export async function addLead(
   page: Page,
   lead: { customerName: string; phone: string; service: string; estimate: string },
@@ -104,7 +104,8 @@ export async function addLead(
   await page.getByLabel("Phone number").fill(lead.phone);
   await page.getByLabel("Service").fill(lead.service);
   await page.getByLabel("Estimate amount").fill(lead.estimate);
-  await page.getByRole("button", { name: /^save$/i }).click();
+  // The dialog's submit button is labelled "Add lead" (there is no "Save" on create).
+  await page.getByRole("dialog").getByRole("button", { name: /^add lead$/i }).click();
   await expect(page.getByText(lead.customerName).first()).toBeVisible({ timeout: 15_000 });
 }
 

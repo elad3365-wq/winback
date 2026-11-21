@@ -43,14 +43,21 @@ export function BetaForm() {
     );
   }
 
+  // Refill after an error. The key remounts the fields so their defaults
+  // apply even though React resets the form when the action finishes.
+  const v = state.values;
   return (
-    <form action={formAction} className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8">
+    <form
+      key={v ? JSON.stringify(v) + (state.error ?? "") : "blank"}
+      action={formAction}
+      className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8"
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor="beta-name" className="text-sm font-medium text-slate-700">
             Name
           </label>
-          <input id="beta-name" name="name" type="text" autoComplete="name" placeholder="Jordan Miller" className={fieldClass} />
+          <input id="beta-name" name="name" type="text" autoComplete="name" placeholder="Jordan Miller" defaultValue={v?.name} className={fieldClass} />
         </div>
         <div>
           <label htmlFor="beta-business" className="text-sm font-medium text-slate-700">
@@ -62,6 +69,7 @@ export function BetaForm() {
             type="text"
             autoComplete="organization"
             placeholder="Miller Heating & Air"
+            defaultValue={v?.business_name}
             className={fieldClass}
           />
         </div>
@@ -75,6 +83,7 @@ export function BetaForm() {
             type="email"
             autoComplete="email"
             placeholder="you@yourbusiness.com"
+            defaultValue={v?.email}
             className={fieldClass}
           />
         </div>
@@ -82,7 +91,10 @@ export function BetaForm() {
           <label htmlFor="beta-type" className="text-sm font-medium text-slate-700">
             Business type
           </label>
-          <select id="beta-type" name="business_type" defaultValue="" className={fieldClass}>
+          <select id="beta-type" name="business_type"
+            defaultValue={
+              v && (BUSINESS_TYPES as readonly string[]).includes(v.business_type) ? v.business_type : ""
+            } className={fieldClass}>
             <option value="" disabled>
               Select one…
             </option>

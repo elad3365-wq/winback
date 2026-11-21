@@ -15,6 +15,7 @@ import {
 } from "@/lib/gmail/autosend";
 import { generateReply, replyDiscountsAllowed, type ReplyInputs } from "@/lib/gmail/reply";
 import { sendApprovedReply, sendingAllowedGlobally } from "@/lib/gmail/send";
+import { isLeadUnsubscribed } from "@/lib/leads";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -126,7 +127,7 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
     estimateAmount: Number(lead?.estimate_amount) || 0,
     daysSinceLastContact: daysSince(lead?.last_follow_up_at ?? lead?.created_at ?? null),
     followUpCount: lead?.follow_up_count ?? 0,
-    unsubscribed: lead?.unsubscribe_status === "unsubscribed",
+    unsubscribed: isLeadUnsubscribed(lead),
   };
 
   const decision = decideNextAction(

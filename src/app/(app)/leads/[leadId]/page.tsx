@@ -13,7 +13,14 @@ import { requireBusinessContext } from "@/lib/business";
 import type { AiMessage, Json, Lead, LeadActivity, LeadNote } from "@/lib/database.types";
 import { parseReviewFlags } from "@/lib/ai/review";
 import { formatCurrency, formatDate, formatPhone } from "@/lib/format";
-import { daysOverdue, effectiveFollowUpDate, isDueToday, isOverdue, LEAD_STATUS_LABELS } from "@/lib/leads";
+import {
+  daysOverdue,
+  effectiveFollowUpDate,
+  isDueToday,
+  isLeadUnsubscribed,
+  isOverdue,
+  LEAD_STATUS_LABELS,
+} from "@/lib/leads";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
@@ -103,7 +110,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ lea
                 <LeadAutopilotToggle leadId={typedLead.id} paused={typedLead.autopilot_paused} />
               </Row>
               <Row label="Subscription">
-                {typedLead.unsubscribe_status === "unsubscribed" ? (
+                {isLeadUnsubscribed(typedLead) ? (
                   <span className="text-rose-600">Unsubscribed</span>
                 ) : (
                   <span className="text-slate-700">Subscribed</span>
