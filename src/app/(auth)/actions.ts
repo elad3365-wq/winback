@@ -6,6 +6,12 @@ import { redirect } from "next/navigation";
 import { destinationAfterAuth, safeNext } from "@/lib/auth-destination";
 import { AUTH_MESSAGES, friendlyAuthError } from "@/lib/auth-errors";
 import { getSiteUrl } from "@/lib/env";
+import {
+  RATE_LIMITED_MESSAGE,
+  clientIp,
+  consumeRateLimit,
+  logSecurityEvent,
+} from "@/lib/security/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthFormState = {
@@ -44,6 +50,15 @@ export async function signUpAction(
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
   }
+  if (fullName.length > 200 || email.length > 320 || password.length > 128) {
+    return { error: "That's longer than we accept. Please shorten it." };
+  }
+
+  const ip = await clientIp();
+  if (!(await consumeRateLimit("sign_up", ip))) {
+    await logSecurityEvent("sign_up_blocked", { email, ip });
+    return { error: RATE_LIMITED_MESSAGE };
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
@@ -58,6 +73,7 @@ export async function signUpAction(
   if (error) {
     return { error: friendlyAuthError(error, AUTH_MESSAGES.signUp) };
   }
+  await logSecurityEvent("sign_up", { email, ip });
 
   // Email confirmation is off in Supabase, so signup already returns a session
   // and the owner goes straight on to onboarding.
@@ -81,13 +97,28 @@ export async function signInAction(
   if (!email || !password) {
     return { error: "Please enter your email and password." };
   }
+  if (email.length > 320 || password.length > 128) {
+    return { error: friendlyAuthError(null, AUTH_MESSAGES.signIn) };
+  }
+
+  // Two limits: guessing one account's password from one address, and one
+  // address spraying many accounts.
+  const ip = await clientIp();
+  const allowed =
+    (await consumeRateLimit("sign_in", `${ip}|${email}`)) && (await consumeRateLimit("sign_in_ip", ip));
+  if (!allowed) {
+    await logSecurityEvent("sign_in_blocked", { email, ip });
+    return { error: RATE_LIMITED_MESSAGE };
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
+    await logSecurityEvent("sign_in_failed", { email, ip, detail: { code: error.code ?? null } });
     return { error: friendlyAuthError(error, AUTH_MESSAGES.signIn) };
   }
+  await logSecurityEvent("sign_in_ok", { email, ip });
 
   revalidatePath("/", "layout");
   const destination = data.user
@@ -164,9 +195,17 @@ export async function requestPasswordResetAction(
 ): Promise<AuthFormState> {
   const email = readString(formData, "email");
 
-  if (!isValidEmail(email)) {
+  if (!isValidEmail(email) || email.length > 320) {
     return { error: "Please enter a valid email address." };
   }
+
+  const ip = await clientIp();
+  const allowed = (await consumeRateLimit("reset", ip)) && (await consumeRateLimit("reset_email", email));
+  if (!allowed) {
+    await logSecurityEvent("password_reset_blocked", { email, ip });
+    return { error: RATE_LIMITED_MESSAGE };
+  }
+  await logSecurityEvent("password_reset_requested", { email, ip });
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -192,6 +231,9 @@ export async function updatePasswordAction(
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
   }
+  if (password.length > 128) {
+    return { error: "Password must be 128 characters or fewer." };
+  }
 
   const supabase = await createClient();
   const {
@@ -206,6 +248,8 @@ export async function updatePasswordAction(
   if (error) {
     return { error: friendlyAuthError(error, AUTH_MESSAGES.passwordUpdate) };
   }
+
+  await logSecurityEvent("password_changed", { email: user.email ?? null, ip: await clientIp() });
 
   // End the short-lived recovery session so the owner returns to a clean sign
   // in and proves the new password works.

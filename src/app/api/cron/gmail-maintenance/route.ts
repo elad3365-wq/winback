@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isCronAuthorized } from "@/lib/security/cron-auth";
+
 import { drainQueue } from "@/lib/ai/autopilot/worker";
 import { isGmailFeatureEnabled } from "@/lib/gmail/config";
 import { runGmailMaintenance } from "@/lib/gmail/maintenance";
@@ -19,9 +21,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 function authorized(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return isCronAuthorized(request.headers.get("authorization"));
 }
 
 async function run(): Promise<NextResponse> {
@@ -40,8 +40,9 @@ async function run(): Promise<NextResponse> {
     const drained = await drainQueue(new Date(), 20);
     return NextResponse.json({ ok: true, maintenance, drained }, { status: 200 });
   } catch (error) {
+    console.error("[cron/gmail-maintenance] failed", error instanceof Error ? error.message : error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Maintenance failed." },
+      { error: "Maintenance failed." },
       { status: 503 },
     );
   }

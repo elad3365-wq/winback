@@ -24,6 +24,16 @@ export function sendingAllowedGlobally(): boolean {
 }
 
 /**
+ * Sending WITHOUT a human pressing a button (the autopilot engine) needs its
+ * own, separate switch on top of WINBACK_GMAIL_ALLOW_SEND. Default off: turning
+ * on manual "Approve and send" never also turns on automatic sending. Project
+ * rule: no automatic email sending without the owner's explicit approval.
+ */
+export function autonomousSendingAllowed(): boolean {
+  return sendingAllowedGlobally() && process.env.WINBACK_AUTONOMOUS_SEND_ENABLED?.trim() === "true";
+}
+
+/**
  * Send a reply. `approve` lets the autonomous engine approve-and-send in one
  * step (service role); the owner UI passes a reply that's already approved.
  */

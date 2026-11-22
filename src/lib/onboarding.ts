@@ -97,6 +97,45 @@ export function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+/**
+ * Maximum characters per text field. Server actions receive whatever a caller
+ * sends, not what the form allows, so these are checked on the server and
+ * mirrored by CHECK constraints in the database (migration 0014).
+ */
+export const ONBOARDING_MAX_LENGTHS: Partial<Record<keyof OnboardingData, number>> = {
+  businessName: 120,
+  businessType: 80,
+  customBusinessType: 120,
+  phone: 40,
+  email: 320,
+  website: 300,
+  country: 80,
+  state: 80,
+  city: 120,
+  monthlyEstimates: 20,
+  averageEstimateValue: 20,
+  currency: 8,
+  employeeCount: 20,
+  currentFollowUpMethod: 80,
+  discountSetting: 8,
+  businessHours: 200,
+  additionalRules: 2000,
+};
+
+/** Rejects non-string values and over-long text. Returns an error message or null. */
+export function validateLengths(data: OnboardingData): string | null {
+  if (!data || typeof data !== "object") return "Invalid form data.";
+  for (const [key, max] of Object.entries(ONBOARDING_MAX_LENGTHS) as [keyof OnboardingData, number][]) {
+    const value = data[key];
+    if (typeof value !== "string") return "Invalid form data.";
+    if (value.trim().length > max) return `That text is too long (max ${max} characters).`;
+  }
+  if (typeof data.financingAvailable !== "boolean" || typeof data.paymentPlansAvailable !== "boolean") {
+    return "Invalid form data.";
+  }
+  return null;
+}
+
 /** Validates a single step; returns the first error message, or null if valid. */
 export function validateStep(step: number, data: OnboardingData): string | null {
   if (step === 1) {

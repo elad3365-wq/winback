@@ -23,6 +23,14 @@ import {
   completeText,
 } from "@/lib/ai/anthropic";
 
+const rpc = vi.fn();
+// A stand-in for the Supabase client: only .rpc is used by the budget.
+const budget = {
+  db: { rpc } as unknown as import("@/lib/ai/budget").AiBudget["db"],
+  businessId: "b-1",
+  source: "manual_followup" as const,
+};
+
 function reply(overrides: Record<string, unknown> = {}) {
   return {
     model: "claude-sonnet-5-5",
@@ -35,6 +43,10 @@ function reply(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   create.mockReset();
+  rpc.mockReset();
+  rpc.mockImplementation(async (fn: string) =>
+    fn === "ai_reserve_call" ? { data: "usage-1", error: null } : { data: null, error: null },
+  );
   process.env.ANTHROPIC_API_KEY = "test-key";
   delete process.env.WINBACK_FOLLOWUP_MODEL;
 });
@@ -42,7 +54,7 @@ beforeEach(() => {
 describe("completeText", () => {
   it("returns text, model and usage, with headroom for adaptive thinking", async () => {
     create.mockResolvedValue(reply());
-    const result = await completeText("sys", "user");
+    const result = await completeText("sys", "user", budget);
     expect(result).toEqual({
       content: "Hi Dana, just checking in.",
       model: "claude-sonnet-5-5",
@@ -56,17 +68,51 @@ describe("completeText", () => {
 
   it("never returns a refused, cut-off or empty response as a draft", async () => {
     create.mockResolvedValueOnce(reply({ stop_reason: "refusal", content: [] }));
-    await expect(completeText("s", "u")).rejects.toMatchObject({ reason: "refusal" });
+    await expect(completeText("s", "u", budget)).rejects.toMatchObject({ reason: "refusal" });
     create.mockResolvedValueOnce(reply({ stop_reason: "max_tokens" }));
-    await expect(completeText("s", "u")).rejects.toMatchObject({ reason: "truncated" });
+    await expect(completeText("s", "u", budget)).rejects.toMatchObject({ reason: "truncated" });
     create.mockResolvedValueOnce(reply({ content: [{ type: "text", text: "   " }] }));
-    await expect(completeText("s", "u")).rejects.toMatchObject({ reason: "empty" });
+    await expect(completeText("s", "u", budget)).rejects.toMatchObject({ reason: "empty" });
   });
 
   it("throws AiNotConfiguredError without a key and makes no call", async () => {
     delete process.env.ANTHROPIC_API_KEY;
-    await expect(completeText("s", "u")).rejects.toBeInstanceOf(AiNotConfiguredError);
+    await expect(completeText("s", "u", budget)).rejects.toBeInstanceOf(AiNotConfiguredError);
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe("completeText budget", () => {
+  it("reserves before calling and records real usage after", async () => {
+    create.mockResolvedValue(reply());
+    await completeText("s", "u", budget);
+    expect(rpc.mock.calls[0]).toEqual([
+      "ai_reserve_call",
+      { p_business_id: "b-1", p_source: "manual_followup", p_model: "claude-sonnet-5-5" },
+    ]);
+    expect(rpc.mock.calls[1]).toEqual([
+      "ai_finish_call",
+      { p_id: "usage-1", p_input_tokens: 400, p_output_tokens: 60, p_ok: true },
+    ]);
+  });
+
+  it("makes no model call when the database refuses the budget", async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: "AI_BUDGET:business_daily" } });
+    await expect(completeText("s", "u", budget)).rejects.toMatchObject({ reason: "business_daily" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the ledger is unreachable", async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: "function ai_reserve_call does not exist" } });
+    await expect(completeText("s", "u", budget)).rejects.toMatchObject({ reason: "unavailable" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("still counts a call that failed at the provider", async () => {
+    create.mockRejectedValueOnce(new Error("network"));
+    await expect(completeText("s", "u", budget)).rejects.toThrow("network");
+    expect(rpc.mock.calls[1][0]).toBe("ai_finish_call");
+    expect(rpc.mock.calls[1][1]).toMatchObject({ p_ok: false });
   });
 });
 

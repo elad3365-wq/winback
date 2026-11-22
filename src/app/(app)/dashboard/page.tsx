@@ -46,7 +46,8 @@ export default async function DashboardPage() {
     .limit(2000);
 
   if (error) {
-    return <Alert tone="error">Could not load your dashboard: {error.message}</Alert>;
+    console.error("[dashboard] could not load leads", error.message);
+    return <Alert tone="error">Could not load your dashboard. Please refresh the page.</Alert>;
   }
 
   const allLeads = (leads ?? []) as Lead[];

@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isCronAuthorized } from "@/lib/security/cron-auth";
+
 import { drainQueue } from "@/lib/ai/autopilot/worker";
 import { isAutopilotConfigured } from "@/lib/supabase/admin";
 
@@ -17,9 +19,7 @@ export const maxDuration = 60;
 const BATCH = 20;
 
 function authorized(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return isCronAuthorized(request.headers.get("authorization"));
 }
 
 async function run(): Promise<NextResponse> {
@@ -35,8 +35,9 @@ async function run(): Promise<NextResponse> {
     return NextResponse.json(summary, { status: 200 });
   } catch (error) {
     // Most likely the ai_tasks table is not present yet (migration 0012 pending).
+    console.error("[cron/ai-tasks] drain failed", error instanceof Error ? error.message : error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not read the task queue." },
+      { error: "Could not read the task queue." },
       { status: 503 },
     );
   }

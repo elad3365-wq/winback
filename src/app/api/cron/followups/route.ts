@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isCronAuthorized } from "@/lib/security/cron-auth";
+
 import { isWithinBusinessHours } from "@/lib/ai/business-hours";
 import { generateFollowup } from "@/lib/ai/anthropic";
 import {
@@ -11,6 +13,7 @@ import {
   type FollowupInputs,
 } from "@/lib/ai/followup";
 import { canGenerateDraft, resolveAiPolicy, utcDayStartIso } from "@/lib/ai/guard";
+import { AiBudgetError } from "@/lib/ai/budget";
 import { resolveFollowupModel } from "@/lib/ai/models";
 import { reviewDraft } from "@/lib/ai/review";
 import { delayMinutesForFollowup } from "@/lib/autopilot";
@@ -43,9 +46,7 @@ export const maxDuration = 60;
 const BATCH = 100;
 
 function authorized(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false; // never run unprotected
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return isCronAuthorized(request.headers.get("authorization"));
 }
 
 function followupStatus(n: number): LeadStatus {
@@ -86,7 +87,8 @@ async function run(): Promise<NextResponse> {
     .limit(BATCH);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[cron/followups] due scan failed", error.message);
+    return NextResponse.json({ error: "Could not scan due leads." }, { status: 500 });
   }
   if (!due || due.length === 0) {
     return NextResponse.json({ ...summary, message: "nothing due" }, { status: 200 });
@@ -243,12 +245,22 @@ async function run(): Promise<NextResponse> {
         let generatedText: string;
         let aiModel: string;
         try {
-          const generated = await generateFollowup(inputs);
+          const generated = await generateFollowup(inputs, {
+            db: admin,
+            businessId: lead.business_id,
+            source: "autopilot_followup",
+          });
           generatedText = generated.content;
           aiModel = generated.model;
         } catch (cause) {
+          if (cause instanceof AiBudgetError) {
+            // Leave the lead due: drafting resumes when the budget allows.
+            bump(`budget_${cause.reason}`);
+            await audit("skipped_ai_budget", { reason: cause.reason });
+            continue;
+          }
           bump("generation_error");
-          await audit("generation_error", { message: String(cause) });
+          await audit("generation_error", { message: String(cause).slice(0, 300) });
           continue;
         }
         // Count the spend even if the output is unusable — the call was paid for.

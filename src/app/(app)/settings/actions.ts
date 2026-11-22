@@ -6,6 +6,7 @@ import { requireBusinessContext } from "@/lib/business";
 import {
   isNonNegativeNumber,
   resolveDiscount,
+  validateLengths,
   validateStep,
   type OnboardingData,
 } from "@/lib/onboarding";
@@ -29,6 +30,8 @@ function clean(value: string): string | null {
 export async function updateBusinessSettingsAction(
   data: OnboardingData,
 ): Promise<SettingsResult> {
+  const lengthError = validateLengths(data);
+  if (lengthError) return { status: "error", error: lengthError };
   const step1Error = validateStep(1, data);
   if (step1Error) return { status: "error", error: step1Error };
   const step2Error = validateStep(2, data);
