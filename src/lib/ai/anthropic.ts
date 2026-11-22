@@ -2,6 +2,7 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 
+import { AiBudgetError, finishAiCall, reserveAiCall, type AiBudget } from "@/lib/ai/budget";
 import { buildFollowupPrompt, type FollowupInputs } from "@/lib/ai/followup";
 import { resolveFollowupModel } from "@/lib/ai/models";
 
@@ -41,11 +42,13 @@ export type AiFailureKind =
   | "refusal"
   | "truncated"
   | "empty"
+  | "budget"
   | "unavailable";
 
 /** Classify any error thrown by completeText() for logging and owner-facing copy. */
 export function classifyAiError(error: unknown): AiFailureKind {
   if (error instanceof AiNotConfiguredError) return "not_configured";
+  if (error instanceof AiBudgetError) return "budget";
   if (error instanceof AiGenerationError) return error.reason;
   if (error instanceof Anthropic.RateLimitError) return "rate_limited";
   if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
@@ -67,6 +70,7 @@ export const AI_FAILURE_MESSAGES: Record<AiFailureKind, string> = {
   refusal: "The AI declined to write this message. Try again, or write it yourself.",
   truncated: "The AI response was cut off. Please try again.",
   empty: "Couldn't generate a usable message. Please try again.",
+  budget: "This business reached its AI limit for now. Please try again later.",
   unavailable: "The AI service is unavailable right now. Please try again.",
 };
 
@@ -90,6 +94,8 @@ export type FollowupGeneration = {
 export async function completeText(
   system: string,
   user: string,
+  /** Required: every model call is reserved against the database budget first. */
+  budget: AiBudget,
   // Current models think adaptively by default and thinking tokens count toward
   // max_tokens, so leave headroom: a 1,024 cap could cut a short draft mid-
   // sentence. Billing is per token actually used, not per cap.
@@ -103,13 +109,27 @@ export async function completeText(
   const client = new Anthropic({ apiKey });
   const model = resolveFollowupModel();
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: maxTokens,
-    // Low effort: short, well-specified writing task — keep thinking/cost/latency minimal.
-    output_config: { effort: "low" },
-    system,
-    messages: [{ role: "user", content: user }],
+  // Throws AiBudgetError (no model call) when a cap is reached.
+  const usageId = await reserveAiCall(budget, model);
+
+  let response: Anthropic.Message;
+  try {
+    response = await client.messages.create({
+      model,
+      max_tokens: maxTokens,
+      // Low effort: short, well-specified writing task — keep thinking/cost/latency minimal.
+      output_config: { effort: "low" },
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+  } catch (error) {
+    await finishAiCall(budget, usageId, { ok: false });
+    throw error;
+  }
+  await finishAiCall(budget, usageId, {
+    ok: response.stop_reason !== "refusal" && response.stop_reason !== "max_tokens",
+    inputTokens: response.usage?.input_tokens,
+    outputTokens: response.usage?.output_tokens,
   });
 
   // A refusal or a cut-off response must never become a draft.
@@ -134,7 +154,7 @@ export async function completeText(
   };
 }
 
-export async function generateFollowup(inputs: FollowupInputs): Promise<FollowupGeneration> {
+export async function generateFollowup(inputs: FollowupInputs, budget: AiBudget): Promise<FollowupGeneration> {
   const { system, user } = buildFollowupPrompt(inputs);
-  return completeText(system, user);
+  return completeText(system, user, budget);
 }

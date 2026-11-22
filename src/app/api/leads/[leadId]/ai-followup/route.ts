@@ -15,6 +15,7 @@ import {
   type FollowupInputs,
 } from "@/lib/ai/followup";
 import { canGenerateDraft, resolveAiPolicy, utcDayStartIso } from "@/lib/ai/guard";
+import { AI_BUDGET_MESSAGES, AiBudgetError } from "@/lib/ai/budget";
 import { resolveFollowupModel } from "@/lib/ai/models";
 import { reviewDraft } from "@/lib/ai/review";
 import { isLeadUnsubscribed } from "@/lib/leads";
@@ -24,11 +25,6 @@ import { createClient } from "@/lib/supabase/server";
 // never be cached.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-// Abuse protection: how many drafts one business may generate per rolling
-// minute. Generous for a human clicking "Generate", low enough to cap the API
-// bill if the endpoint is hammered.
-const RATE_LIMIT_PER_MINUTE = 20;
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status });
@@ -126,20 +122,8 @@ export async function POST(
     return json({ error: guard.message }, guard.reason === "spend_limit" ? 429 : 403);
   }
 
-  // Rate limit: count this business's drafts in the last minute.
-  const windowStart = new Date(Date.now() - 60_000).toISOString();
-  const { count } = await supabase
-    .from("ai_messages")
-    .select("id", { count: "exact", head: true })
-    .eq("business_id", lead.business_id)
-    .gte("created_at", windowStart);
-
-  if ((count ?? 0) >= RATE_LIMIT_PER_MINUTE) {
-    return json(
-      { error: "You're generating messages very quickly. Give it a moment and try again." },
-      429,
-    );
-  }
+  // Per-minute and daily spend limits are enforced in the database when the
+  // call is reserved (lib/ai/budget.ts, migration 0014).
 
   // Missing settings are treated as the most conservative case: no financing,
   // no payment plans, and no discounts — so nothing is ever offered that the
@@ -167,11 +151,18 @@ export async function POST(
   let model: string;
   let usage: { inputTokens: number; outputTokens: number } | undefined;
   try {
-    const result = await generateFollowup(inputs);
+    const result = await generateFollowup(inputs, {
+      db: supabase,
+      businessId: lead.business_id,
+      source: "manual_followup",
+    });
     generatedText = result.content;
     model = result.model;
     usage = result.usage;
   } catch (error) {
+    if (error instanceof AiBudgetError) {
+      return json({ error: AI_BUDGET_MESSAGES[error.reason] }, error.reason === "not_allowed" ? 403 : 429);
+    }
     const kind = classifyAiError(error);
     console.error(`[ai/followup] generation failed (${kind})`, error);
     const status = kind === "not_configured" ? 503 : kind === "rate_limited" ? 429 : 502;

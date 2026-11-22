@@ -33,6 +33,7 @@ vi.mock("@/lib/ai/anthropic", async (importOriginal) => {
 });
 
 import { POST } from "@/app/api/leads/[leadId]/ai-followup/route";
+import { AiBudgetError } from "@/lib/ai/budget";
 
 const lead = {
   id: "lead-1",
@@ -50,10 +51,10 @@ function setup(opts: { autonomy?: unknown; lead?: unknown; draftsToday?: number 
   results.business_ai_settings = [{ data: { tone: "friendly", financing_available: false } }];
   results.business_ai_autonomy = [{ data: opts.autonomy ?? null }];
   results.business_knowledge = [{ data: [{ kind: "policy", title: "Warranty", content: "2 years on workmanship" }] }];
-  // 1st count: drafts today (spend), 2nd count: last minute (rate limit)
+  // 1st count: drafts today (spend guard); the per-minute limit now lives in
+  // the database budget (ai_reserve_call), which generateFollowup calls.
   results.ai_messages = [
     { count: opts.draftsToday ?? 0 },
-    { count: 0 },
     { data: { id: "msg-1", created_at: "2026-11-19T07:00:00Z" }, error: null },
   ];
 }
@@ -71,6 +72,17 @@ beforeEach(() => {
 });
 
 describe("POST /api/leads/[leadId]/ai-followup", () => {
+  it("passes a budget for the lead's business and maps a refused budget to 429", async () => {
+    setup();
+    generate.mockRejectedValue(new AiBudgetError("business_daily"));
+    const res = await call();
+    expect(res.status).toBe(429);
+    expect(generate.mock.calls[0][1]).toMatchObject({ businessId: "biz-1", source: "manual_followup" });
+    const body = await res.json();
+    expect(body.error).toMatch(/today's AI limit/);
+    expect(inserts).toHaveLength(0);
+  });
+
   it("passes the approved knowledge base to the model and returns review flags", async () => {
     setup();
     generate.mockResolvedValue({

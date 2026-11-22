@@ -657,6 +657,22 @@ export type Database = {
         };
         Returns: string;
       };
+      ai_reserve_call: {
+        Args: { p_business_id: string; p_source: string; p_model: string };
+        Returns: string;
+      };
+      ai_finish_call: {
+        Args: { p_id: string; p_input_tokens: number; p_output_tokens: number; p_ok: boolean };
+        Returns: undefined;
+      };
+      consume_rate_limit: {
+        Args: { p_bucket: string; p_limit: number; p_window_seconds: number };
+        Returns: boolean;
+      };
+      log_security_event: {
+        Args: { p_event: string; p_subject: string | null; p_ip_hash: string | null; p_detail?: Json | null };
+        Returns: undefined;
+      };
     };
     Enums: {
       lead_status: LeadStatus;

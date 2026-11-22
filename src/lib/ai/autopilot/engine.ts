@@ -5,6 +5,7 @@ import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "@/l
 import { crmUpdateForInbound } from "@/lib/ai/autopilot/crm";
 import { estimateDraftCostUsd, withinActionLimit, withinSpendLimit } from "@/lib/ai/autopilot/limits";
 import { validateOutboundDraft } from "@/lib/ai/autopilot/supervisor";
+import { AiBudgetError } from "@/lib/ai/budget";
 import { resolveFollowupModel } from "@/lib/ai/models";
 import type { AiTask, Json } from "@/lib/database.types";
 import {
@@ -14,7 +15,7 @@ import {
   replyDefersToHuman,
 } from "@/lib/gmail/autosend";
 import { generateReply, replyDiscountsAllowed, type ReplyInputs } from "@/lib/gmail/reply";
-import { sendApprovedReply, sendingAllowedGlobally } from "@/lib/gmail/send";
+import { autonomousSendingAllowed, sendApprovedReply } from "@/lib/gmail/send";
 import { isLeadUnsubscribed } from "@/lib/leads";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -209,7 +210,16 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
     knowledge,
   };
 
-  const generated = await generateReply(inputs);
+  let generated;
+  try {
+    generated = await generateReply(inputs, { db, businessId, source: "autopilot_reply" });
+  } catch (error) {
+    if (error instanceof AiBudgetError) {
+      await audit("autopilot_skipped_ai_budget", { message_id: messageId, reason: error.reason });
+      return { result: "noop", detail: `AI budget: ${error.reason}` };
+    }
+    throw error;
+  }
   if (!generated.content) {
     await audit("autopilot_empty_reply", { message_id: messageId });
     return { result: "noop", detail: "Empty reply." };
@@ -250,7 +260,7 @@ async function executeInboundEmail(task: AiTask): Promise<TaskOutcome> {
   // allows sending, and the draft is safe/confident/answering. Everything else —
   // the pilot default — leaves the draft for owner approval (DRAFT behaviour).
   const autoSend = decideAutoSend({
-    globalSendEnabled: sendingAllowedGlobally(),
+    globalSendEnabled: autonomousSendingAllowed(),
     autopilot: autonomy.level === "autopilot",
     ownerAuthorizedSending: autonomy.sendAuthorized,
     emergencyStop: autonomy.emergencyStop,

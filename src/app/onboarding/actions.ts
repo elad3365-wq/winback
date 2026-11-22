@@ -6,6 +6,7 @@ import { requireBusinessContext } from "@/lib/business";
 import {
   isNonNegativeNumber,
   resolveDiscount,
+  validateLengths,
   validateStep,
   type OnboardingData,
 } from "@/lib/onboarding";
@@ -30,6 +31,8 @@ export async function completeOnboardingAction(
   data: OnboardingData,
 ): Promise<OnboardingResult> {
   // Re-validate on the server — never trust the client.
+  const lengthError = validateLengths(data);
+  if (lengthError) return { status: "error", error: lengthError };
   const step1Error = validateStep(1, data);
   if (step1Error) return { status: "error", error: step1Error };
   const step2Error = validateStep(2, data);

@@ -42,7 +42,7 @@ export default async function LeadsPage({
       </header>
 
       {error ? (
-        <Alert tone="error">Could not load your leads: {error.message}</Alert>
+        <Alert tone="error">Could not load your leads. Please refresh the page.</Alert>
       ) : (
         <LeadsWorkspace
           leads={leads ?? []}

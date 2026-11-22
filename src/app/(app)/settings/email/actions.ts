@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { requireBusinessContext } from "@/lib/business";
 import type { GmailReplyStatus } from "@/lib/database.types";
 import { canGenerateDraft, resolveAiPolicy, utcDayStartIso } from "@/lib/ai/guard";
+import { AI_BUDGET_MESSAGES, AiBudgetError } from "@/lib/ai/budget";
 import { resolveFollowupModel } from "@/lib/ai/models";
 import { isGmailFeatureEnabled } from "@/lib/gmail/config";
 import { disconnect } from "@/lib/gmail/connection";
@@ -253,8 +254,9 @@ export async function generateReplyAction(
 
   let generated;
   try {
-    generated = await generateReply(inputs);
+    generated = await generateReply(inputs, { db: supabase, businessId: business.id, source: "manual_reply" });
   } catch (error) {
+    if (error instanceof AiBudgetError) return { error: AI_BUDGET_MESSAGES[error.reason] };
     const kind = classifyAiError(error);
     console.error(`[email/reply] generation failed (${kind})`, error);
     return { error: AI_FAILURE_MESSAGES[kind] };

@@ -142,14 +142,23 @@ export type ReplyEnvelope = {
   body: string;
 };
 
+/**
+ * Header values come partly from the customer's own email (subject, sender,
+ * Message-ID). A CR or LF inside one would start a new header (for example a
+ * hidden Bcc), so every header value is flattened to one line.
+ */
+export function headerSafe(value: string): string {
+  return value.replace(/[\r\n\u0000]+/g, " ").trim();
+}
+
 /** Build a base64url-encoded RFC822 message for messages.send / drafts.create. */
 export function buildRawReply(env: ReplyEnvelope): string {
   const lines: string[] = [];
-  lines.push(`From: ${env.from}`);
-  lines.push(`To: ${env.to.join(", ")}`);
-  lines.push(`Subject: ${env.subject}`);
-  if (env.inReplyTo) lines.push(`In-Reply-To: ${env.inReplyTo}`);
-  if (env.references) lines.push(`References: ${env.references}`);
+  lines.push(`From: ${headerSafe(env.from)}`);
+  lines.push(`To: ${env.to.map(headerSafe).join(", ")}`);
+  lines.push(`Subject: ${headerSafe(env.subject)}`);
+  if (env.inReplyTo) lines.push(`In-Reply-To: ${headerSafe(env.inReplyTo)}`);
+  if (env.references) lines.push(`References: ${headerSafe(env.references)}`);
   lines.push("MIME-Version: 1.0");
   lines.push('Content-Type: text/plain; charset="UTF-8"');
   lines.push("Content-Transfer-Encoding: 7bit");

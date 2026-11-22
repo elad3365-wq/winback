@@ -25,7 +25,8 @@ export async function setAutonomyLevelAction(level: string): Promise<AutopilotAc
     revalidatePath("/settings/autopilot");
     return { ok: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Could not update autonomy." };
+    console.error("[settings/autopilot] update failed", error instanceof Error ? error.message : error);
+    return { error: "Could not update autonomy. Please try again." };
   }
 }
 
@@ -38,7 +39,8 @@ export async function setEmergencyStopAction(on: boolean): Promise<AutopilotActi
     revalidatePath("/settings/autopilot");
     return { ok: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Could not update the emergency stop." };
+    console.error("[settings/autopilot] update failed", error instanceof Error ? error.message : error);
+    return { error: "Could not update the emergency stop. Please try again." };
   }
 }
 
@@ -56,6 +58,7 @@ export async function setSendAuthorizedAction(on: boolean): Promise<AutopilotAct
     revalidatePath("/settings/autopilot");
     return { ok: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Could not update send authorization." };
+    console.error("[settings/autopilot] update failed", error instanceof Error ? error.message : error);
+    return { error: "Could not update send authorization. Please try again." };
   }
 }

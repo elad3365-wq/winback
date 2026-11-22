@@ -37,6 +37,11 @@ export async function submitBetaAction(
     const { error } = await supabase.from("beta_signups").insert(parsed.value);
     if (error) {
       console.error("beta_signups insert failed:", error.code, error.message);
+      // Duplicate email in the last day, or the form is being flooded (0014).
+      if (error.code === "23505") return { status: "success", submittedAt: Date.now() };
+      if (error.code === "P0001") {
+        return { status: "error", error: "We're getting a lot of requests right now. Please try again in a few minutes.", values };
+      }
       return { status: "error", error: SAVE_FAILED, values };
     }
   } catch (err) {
