@@ -20,8 +20,10 @@ export default defineConfig({
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
+  globalSetup: "./e2e/vercel-share-setup.ts",
   use: {
     baseURL: process.env.E2E_BASE_URL,
+    storageState: "e2e/.share-state.json",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },

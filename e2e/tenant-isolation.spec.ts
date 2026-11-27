@@ -14,8 +14,8 @@ test("tenant isolation: one business never sees another's leads", async ({ brows
   const miamiLead = `Miami Customer ${stamp}`;
   const nyLead = `NY Customer ${stamp}`;
 
-  const ctxA = await browser.newContext();
-  const ctxB = await browser.newContext();
+  const ctxA = await browser.newContext({ storageState: "e2e/.share-state.json" });
+  const ctxB = await browser.newContext({ storageState: "e2e/.share-state.json" });
   try {
     const pageA = await ctxA.newPage();
     const pageB = await ctxB.newPage();
