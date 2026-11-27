@@ -6,10 +6,13 @@ import { requireBusinessContext } from "@/lib/business";
 import {
   isNonNegativeNumber,
   resolveDiscount,
+  validateLengths,
   validateStep,
   type OnboardingData,
 } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/server";
+
+const OWNER_ONLY = "Only the business owner can change the business profile and AI rules.";
 
 export type SettingsResult = { status: "success" } | { status: "error"; error: string };
 
@@ -27,17 +30,20 @@ function clean(value: string): string | null {
 export async function updateBusinessSettingsAction(
   data: OnboardingData,
 ): Promise<SettingsResult> {
+  const lengthError = validateLengths(data);
+  if (lengthError) return { status: "error", error: lengthError };
   const step1Error = validateStep(1, data);
   if (step1Error) return { status: "error", error: step1Error };
   const step2Error = validateStep(2, data);
   if (step2Error) return { status: "error", error: step2Error };
 
-  const { business } = await requireBusinessContext();
+  const { business, role } = await requireBusinessContext();
+  if (role !== "owner") return { status: "error", error: OWNER_ONLY };
   const supabase = await createClient();
 
   const { aiCanOfferDiscounts, maximumDiscountPercent } = resolveDiscount(data.discountSetting);
 
-  const { error: businessError } = await supabase
+  const { data: updatedBusiness, error: businessError } = await supabase
     .from("businesses")
     .update({
       name: data.businessName.trim(),
@@ -56,10 +62,16 @@ export async function updateBusinessSettingsAction(
       employee_count: toNumberOrNull(data.employeeCount),
       current_follow_up_method: clean(data.currentFollowUpMethod),
     })
-    .eq("id", business.id);
+    .eq("id", business.id)
+    .select("id");
 
   if (businessError) {
-    return { status: "error", error: businessError.message };
+    console.error("settings: business update failed", businessError);
+    return { status: "error", error: "Could not save your business details. Please try again." };
+  }
+  // Only owners may edit the business (RLS); a blocked update is 0 rows, not an error.
+  if (!updatedBusiness || updatedBusiness.length === 0) {
+    return { status: "error", error: OWNER_ONLY };
   }
 
   const { error: aiError } = await supabase.from("business_ai_settings").upsert(
@@ -76,7 +88,8 @@ export async function updateBusinessSettingsAction(
   );
 
   if (aiError) {
-    return { status: "error", error: aiError.message };
+    console.error("settings: AI settings save failed", aiError);
+    return { status: "error", error: "Could not save your AI settings. Please try again." };
   }
 
   revalidatePath("/settings");

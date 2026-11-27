@@ -1,60 +1,94 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import {
   approveAiMessageAction,
+  cancelAiMessageAction,
+  markAiMessageSentManuallyAction,
   reopenAiMessageAction,
   saveAiMessageEditAction,
 } from "@/app/(app)/leads/ai-actions";
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Select, Textarea } from "@/components/ui/field";
+import { smsHref } from "@/lib/ai/manual-send";
+import type { ReviewFlag } from "@/lib/ai/review";
 import type { Lead } from "@/lib/database.types";
+import { isLeadUnsubscribed } from "@/lib/leads";
 
 type Channel = "sms" | "email";
-type Status = "draft" | "approved";
+type Status = "draft" | "edited" | "approved" | "sent";
+
+/** The lead's latest open AI message, so a reload doesn't lose the draft. */
+export type InitialAiMessage = {
+  id: string;
+  message: string;
+  channel: Channel;
+  status: Status;
+  approvedAt: string | null;
+  flags: ReviewFlag[];
+};
 
 type GenerateResponse = {
   id: string;
   message: string;
   channel: Channel;
   discountOffered: boolean;
+  flags?: ReviewFlag[];
   createdAt: string;
 };
 
 /**
- * AI follow-up with the draft -> approved -> sent workflow.
- *
- * Generate produces a draft, which the owner can edit, regenerate, copy, and
- * then explicitly Approve. Approval locks the text and records who/when.
- * Sending is not built yet, so the Send button is present but disabled — a
- * message never leaves WinBack from here.
+ * AI follow-up, human-in-the-loop:
+ *   Generate → review (flags) → edit → Approve → copy / open in Messages →
+ *   Mark as sent.
+ * WinBack never sends anything from here. Works without Gmail: the owner sends
+ * the approved text from their own phone or email and records it.
  */
-export function AiFollowup({ lead }: { lead: Lead }) {
-  const [channel, setChannel] = useState<Channel>("sms");
-  const [draftId, setDraftId] = useState<string | null>(null);
-  const [content, setContent] = useState("");
-  const [savedContent, setSavedContent] = useState("");
-  const [status, setStatus] = useState<Status | null>(null);
-  const [approvedAt, setApprovedAt] = useState<string | null>(null);
+export function AiFollowup({ lead, initial }: { lead: Lead; initial?: InitialAiMessage | null }) {
+  const [channel, setChannel] = useState<Channel>(initial?.channel ?? "sms");
+  const [draftId, setDraftId] = useState<string | null>(initial?.id ?? null);
+  const [content, setContent] = useState(initial?.message ?? "");
+  const [savedContent, setSavedContent] = useState(initial?.message ?? "");
+  const [status, setStatus] = useState<Status | null>(initial?.status ?? null);
+  const [approvedAt, setApprovedAt] = useState<string | null>(initial?.approvedAt ?? null);
+  const [flags, setFlags] = useState<ReviewFlag[]>(initial?.flags ?? []);
 
-  const [generating, setGenerating] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [approving, setApproving] = useState(false);
-  const [reopening, setReopening] = useState(false);
+  const [pending, setPending] = useState<
+    null | "generate" | "save" | "approve" | "reopen" | "discard" | "sent"
+  >(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const busy = generating || saving || approving || reopening;
+  const busy = pending !== null;
+  const unsubscribed = isLeadUnsubscribed(lead);
   const isApproved = status === "approved";
+  const isSent = status === "sent";
+  const isLocked = isApproved || isSent;
   const isDirty = content.trim() !== savedContent.trim();
+  const smsLink = isApproved && channel === "sms" ? smsHref(lead.phone, content) : null;
+
+  function resetDraft() {
+    setDraftId(null);
+    setContent("");
+    setSavedContent("");
+    setStatus(null);
+    setApprovedAt(null);
+    setFlags([]);
+  }
 
   async function generate() {
-    setGenerating(true);
+    setPending("generate");
     setError(null);
+    setNotice(null);
     setCopied(false);
     try {
+      // Regenerating replaces the open draft: cancel it so it never lingers as
+      // an unreviewed draft in history.
+      if (draftId && !isLocked) await cancelAiMessageAction(draftId);
       const response = await fetch(`/api/leads/${lead.id}/ai-followup`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -72,16 +106,17 @@ export function AiFollowup({ lead }: { lead: Lead }) {
       setSavedContent(data.message ?? "");
       setStatus("draft");
       setApprovedAt(null);
+      setFlags(Array.isArray(data.flags) ? data.flags : []);
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
     } finally {
-      setGenerating(false);
+      setPending(null);
     }
   }
 
   async function saveEdit(): Promise<boolean> {
     if (!draftId) return false;
-    setSaving(true);
+    setPending("save");
     setError(null);
     try {
       const result = await saveAiMessageEditAction(draftId, content);
@@ -90,10 +125,10 @@ export function AiFollowup({ lead }: { lead: Lead }) {
         return false;
       }
       setSavedContent(content.trim());
-      setStatus(result.status === "approved" ? "approved" : "draft");
+      setStatus(result.status === "approved" ? "approved" : "edited");
       return true;
     } finally {
-      setSaving(false);
+      setPending(null);
     }
   }
 
@@ -105,7 +140,7 @@ export function AiFollowup({ lead }: { lead: Lead }) {
       const saved = await saveEdit();
       if (!saved) return;
     }
-    setApproving(true);
+    setPending("approve");
     try {
       const result = await approveAiMessageAction(draftId);
       if (result.error) {
@@ -115,14 +150,14 @@ export function AiFollowup({ lead }: { lead: Lead }) {
       setStatus("approved");
       setApprovedAt(result.approvedAt ?? new Date().toISOString());
     } finally {
-      setApproving(false);
+      setPending(null);
     }
   }
 
   async function reopen() {
     if (!draftId) return;
     setError(null);
-    setReopening(true);
+    setPending("reopen");
     try {
       const result = await reopenAiMessageAction(draftId);
       if (result.error) {
@@ -132,7 +167,41 @@ export function AiFollowup({ lead }: { lead: Lead }) {
       setStatus("draft");
       setApprovedAt(null);
     } finally {
-      setReopening(false);
+      setPending(null);
+    }
+  }
+
+  async function discard() {
+    if (!draftId) return;
+    setError(null);
+    setPending("discard");
+    try {
+      const result = await cancelAiMessageAction(draftId);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      resetDraft();
+      setNotice("Draft discarded. Nothing was sent.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function markSent() {
+    if (!draftId) return;
+    setError(null);
+    setPending("sent");
+    try {
+      const result = await markAiMessageSentManuallyAction(draftId);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      setStatus("sent");
+      setNotice("Recorded as sent and logged as a contact on this lead.");
+    } finally {
+      setPending(null);
     }
   }
 
@@ -153,39 +222,57 @@ export function AiFollowup({ lead }: { lead: Lead }) {
         <p className="mt-1 text-sm text-slate-500">
           Draft, review and approve a follow-up for{" "}
           <span className="font-medium text-slate-700">{lead.customer_name}</span> about{" "}
-          <span className="font-medium text-slate-700">{lead.service}</span>. Sending isn&apos;t
-          enabled yet — approved messages are ready for a future send step.
+          <span className="font-medium text-slate-700">{lead.service}</span>. WinBack never sends it
+          for you — copy the approved message into your phone or email, then mark it as sent.
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          The AI only uses the estimate, your Settings and your{" "}
+          <Link href="/settings/knowledge" className="font-medium text-indigo-600 hover:text-indigo-500">
+            knowledge base
+          </Link>{" "}
+          — add prices and policies there so it can mention them.
         </p>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="sm:w-40">
-          <Field label="Channel" htmlFor="ai-channel">
-            <Select
-              id="ai-channel"
-              value={channel}
-              onChange={(event) => setChannel(event.target.value as Channel)}
-              disabled={busy || isApproved}
-            >
-              <option value="sms">Text message</option>
-              <option value="email">Email</option>
-            </Select>
-          </Field>
-        </div>
+      {unsubscribed ? (
+        <Alert tone="info">This customer unsubscribed, so AI follow-ups are turned off for them.</Alert>
+      ) : (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="sm:w-40">
+            <Field label="Channel" htmlFor="ai-channel">
+              <Select
+                id="ai-channel"
+                value={channel}
+                onChange={(event) => setChannel(event.target.value as Channel)}
+                disabled={busy || isLocked}
+              >
+                <option value="sms">Text message</option>
+                <option value="email">Email</option>
+              </Select>
+            </Field>
+          </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={generate} disabled={busy}>
-            {generating ? "Generating…" : status ? "Regenerate" : "Generate AI Follow-up"}
-          </Button>
-          {status ? (
-            <Button variant="secondary" onClick={copy} disabled={busy || !content.trim()}>
-              {copied ? "Copied!" : "Copy"}
-            </Button>
-          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {!isApproved ? (
+              <Button onClick={generate} disabled={busy}>
+                {pending === "generate"
+                  ? "Generating…"
+                  : status && !isSent
+                    ? "Regenerate"
+                    : "Generate AI Follow-up"}
+              </Button>
+            ) : null}
+            {status ? (
+              <Button variant="secondary" onClick={copy} disabled={busy || !content.trim()}>
+                {copied ? "Copied!" : "Copy"}
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
 
       {error ? <Alert tone="error">{error}</Alert> : null}
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
 
       {status ? (
         <div className="space-y-3">
@@ -198,13 +285,29 @@ export function AiFollowup({ lead }: { lead: Lead }) {
             ) : null}
           </div>
 
+          {flags.length > 0 && !isSent ? (
+            <div
+              role="status"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900"
+            >
+              <p className="font-medium">Check before sending</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {flags.map((flag, index) => (
+                  <li key={`${flag.kind}-${index}`}>{flag.message}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <Field
             label="Message"
             htmlFor="ai-message"
             hint={
-              isApproved
-                ? "Approved and locked. Reopen to make changes."
-                : "Edit anything, then Save and Approve."
+              isSent
+                ? "Sent manually. Generate a new follow-up when you're ready."
+                : isApproved
+                  ? "Approved and locked. Reopen to make changes."
+                  : "Edit anything, then Approve."
             }
           >
             <Textarea
@@ -212,36 +315,48 @@ export function AiFollowup({ lead }: { lead: Lead }) {
               value={content}
               onChange={(event) => setContent(event.target.value)}
               rows={channel === "email" ? 7 : 4}
-              readOnly={isApproved}
-              className={isApproved ? "bg-slate-50 text-slate-600" : undefined}
+              readOnly={isLocked}
+              className={isLocked ? "bg-slate-50 text-slate-600" : undefined}
             />
           </Field>
 
           {isApproved ? (
             <div className="flex flex-wrap items-center gap-2">
+              {smsLink ? (
+                <a
+                  href={smsLink}
+                  className={buttonClasses("secondary")}
+                >
+                  Open in Messages
+                </a>
+              ) : null}
+              <Button onClick={markSent} disabled={busy}>
+                {pending === "sent" ? "Saving…" : "I sent it — mark as sent"}
+              </Button>
               <Button variant="secondary" onClick={reopen} disabled={busy}>
-                {reopening ? "Reopening…" : "Edit / revise"}
+                {pending === "reopen" ? "Reopening…" : "Edit / revise"}
               </Button>
-              {/* Sending is intentionally disabled until the send phase ships. */}
-              <Button disabled title="Sending isn't enabled yet">
-                Send (coming soon)
+              <Button variant="secondary" onClick={discard} disabled={busy}>
+                {pending === "discard" ? "Discarding…" : "Discard"}
               </Button>
-              <span className="text-xs text-slate-500">Sending isn&apos;t enabled yet.</span>
             </div>
-          ) : (
+          ) : isSent ? null : (
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={saveEdit} disabled={busy || !isDirty}>
-                {saving ? "Saving…" : "Save changes"}
+              <Button variant="secondary" onClick={() => void saveEdit()} disabled={busy || !isDirty}>
+                {pending === "save" ? "Saving…" : "Save changes"}
               </Button>
               <Button onClick={approve} disabled={busy || !content.trim()}>
-                {approving ? "Approving…" : "Approve"}
+                {pending === "approve" ? "Approving…" : "Approve"}
+              </Button>
+              <Button variant="secondary" onClick={discard} disabled={busy}>
+                {pending === "discard" ? "Discarding…" : "Discard"}
               </Button>
             </div>
           )}
         </div>
-      ) : (
+      ) : unsubscribed ? null : (
         <p className="rounded-lg bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
-          {generating
+          {pending === "generate"
             ? "Writing a follow-up…"
             : "Click Generate to draft a follow-up message for this lead."}
         </p>
@@ -253,11 +368,15 @@ export function AiFollowup({ lead }: { lead: Lead }) {
 function StatusPill({ status }: { status: Status }) {
   const styles: Record<Status, string> = {
     draft: "bg-slate-100 text-slate-700 ring-slate-200",
+    edited: "bg-indigo-50 text-indigo-700 ring-indigo-200",
     approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    sent: "bg-sky-50 text-sky-700 ring-sky-200",
   };
   const labels: Record<Status, string> = {
     draft: "Draft",
+    edited: "Edited draft",
     approved: "Approved",
+    sent: "Sent manually",
   };
   return (
     <span

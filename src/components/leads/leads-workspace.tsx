@@ -35,17 +35,20 @@ export function LeadsWorkspace({
   leads,
   initialStatus = "all",
   initialDue = "all",
+  openCreate = false,
 }: {
   leads: Lead[];
   initialStatus?: LeadStatus | "all";
   initialDue?: DueFilter;
+  /** Opens the Add lead dialog on arrival (/leads?new=1 from the dashboard). */
+  openCreate?: boolean;
 }) {
   const [view, setView] = useState<ViewMode>("pipeline");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">(initialStatus);
   const [dueFilter, setDueFilter] = useState<DueFilter>(initialDue);
   const [sort, setSort] = useState<LeadSort>("newest");
-  const [dialog, setDialog] = useState<DialogState>({ mode: "closed" });
+  const [dialog, setDialog] = useState<DialogState>(openCreate ? { mode: "create" } : { mode: "closed" });
   const [error, setError] = useState<string | null>(null);
   const [localStatus, setLocalStatus] = useState<Record<string, LeadStatus>>({});
   const [dragId, setDragId] = useState<string | null>(null);
@@ -152,49 +155,51 @@ export function LeadsWorkspace({
         <Button onClick={() => setDialog({ mode: "create" })}>Add lead</Button>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200 lg:flex-row lg:flex-wrap lg:items-center">
-        <Input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name, phone or service"
-          aria-label="Search leads"
-          className="lg:w-64"
-        />
-        <Select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as LeadStatus | "all")}
-          aria-label="Filter by status"
-          className="lg:w-48"
-        >
-          <option value="all">All statuses</option>
-          {LEAD_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {LEAD_STATUS_LABELS[status]}
-            </option>
-          ))}
-        </Select>
-        <Select value={dueFilter} onChange={(e) => setDueFilter(e.target.value as DueFilter)} aria-label="Filter by follow-up" className="lg:w-44">
-          <option value="all">Any follow-up</option>
-          <option value="overdue">Overdue</option>
-          <option value="due_today">Due today</option>
-          <option value="upcoming">Upcoming</option>
-        </Select>
-        <Select value={sort} onChange={(e) => setSort(e.target.value as LeadSort)} aria-label="Sort leads" className="lg:w-48">
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="follow_up">Next follow-up</option>
-          <option value="recent_contact">Recently contacted</option>
-        </Select>
-        {filtersActive ? (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            Clear filters
-          </Button>
-        ) : null}
-        <span className="text-xs text-slate-500 lg:ml-auto">
-          {filtered.length} of {leads.length} {leads.length === 1 ? "lead" : "leads"}
-        </span>
-      </div>
+      {leads.length === 0 ? null : (
+        <div className="flex flex-col gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200 lg:flex-row lg:flex-wrap lg:items-center">
+          <Input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, phone or service"
+            aria-label="Search leads"
+            className="lg:w-64"
+          />
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as LeadStatus | "all")}
+            aria-label="Filter by status"
+            className="lg:w-48"
+          >
+            <option value="all">All statuses</option>
+            {LEAD_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {LEAD_STATUS_LABELS[status]}
+              </option>
+            ))}
+          </Select>
+          <Select value={dueFilter} onChange={(e) => setDueFilter(e.target.value as DueFilter)} aria-label="Filter by follow-up" className="lg:w-44">
+            <option value="all">Any follow-up</option>
+            <option value="overdue">Overdue</option>
+            <option value="due_today">Due today</option>
+            <option value="upcoming">Upcoming</option>
+          </Select>
+          <Select value={sort} onChange={(e) => setSort(e.target.value as LeadSort)} aria-label="Sort leads" className="lg:w-48">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="follow_up">Next follow-up</option>
+            <option value="recent_contact">Recently contacted</option>
+          </Select>
+          {filtersActive ? (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          ) : null}
+          <span className="text-xs text-slate-500 lg:ml-auto">
+            {filtered.length} of {leads.length} {leads.length === 1 ? "lead" : "leads"}
+          </span>
+        </div>
+      )}
 
       {error ? <Alert tone="error">{error}</Alert> : null}
 
@@ -461,6 +466,9 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
         Add the customers who received an estimate and never replied. WinBack keeps the follow-up on your
         radar and drafts the message for you.
+      </p>
+      <p className="mx-auto mt-2 max-w-sm text-xs text-slate-400">
+        You only need a name, phone number and the service you quoted. Nothing is sent to the customer.
       </p>
       <Button className="mt-5" onClick={onAdd}>
         Add your first lead

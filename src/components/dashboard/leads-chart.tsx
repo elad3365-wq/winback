@@ -48,21 +48,21 @@ export function LeadsChart({ points }: { points: DailyPoint[] }) {
         </p>
       ) : (
         <div
-          className="mt-5 flex h-36 items-end gap-1"
+          className="mt-5 flex h-36 gap-1"
           role="img"
           aria-label={`Leads created per day over the last ${range} days, ${total} total.`}
         >
           {visible.map((point) => {
             const heightPct = Math.round((point.count / max) * 100);
             return (
-              <div key={point.date} className="group flex min-w-0 flex-1 flex-col items-center justify-end">
-                <div className="relative flex w-full flex-1 items-end">
-                  <div
-                    className="w-full rounded-t bg-indigo-500/80 transition-all group-hover:bg-indigo-600"
-                    style={{ height: `${Math.max(point.count === 0 ? 0 : 6, heightPct)}%` }}
-                    title={`${formatDay(point.date)}: ${point.count}`}
-                  />
-                </div>
+              // Each column takes the track's full, definite height (h-36), so
+              // the bar's percentage height resolves against it.
+              <div key={point.date} className="group flex h-full min-w-0 flex-1 items-end">
+                <div
+                  className="w-full rounded-t bg-indigo-500/80 transition-all group-hover:bg-indigo-600"
+                  style={{ height: `${Math.max(point.count === 0 ? 0 : 6, heightPct)}%` }}
+                  title={`${formatDay(point.date)}: ${point.count}`}
+                />
               </div>
             );
           })}

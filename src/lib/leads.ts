@@ -82,6 +82,19 @@ export const AUTOPILOT_STOP_STATUSES: LeadStatus[] = [
   "unsubscribed",
 ];
 
+/**
+ * A customer is opted out if EITHER the opt-out flag is set (Gmail
+ * unsubscribe detection, autopilot) OR the owner moved the lead to the
+ * "Unsubscribed" status by hand. Every drafting path must use this, so an
+ * owner's manual opt-out is honoured the same way as a detected one.
+ */
+export function isLeadUnsubscribed(
+  lead: { status?: string | null; unsubscribe_status?: string | null } | null | undefined,
+): boolean {
+  if (!lead) return false;
+  return lead.unsubscribe_status === "unsubscribed" || lead.status === "unsubscribed";
+}
+
 export function isLeadStatus(value: unknown): value is LeadStatus {
   return typeof value === "string" && (LEAD_STATUSES as string[]).includes(value);
 }

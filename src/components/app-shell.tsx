@@ -7,13 +7,18 @@ import { useState, type ReactNode } from "react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
+import type { BusinessSummary } from "@/lib/active-business";
 import { cn } from "@/lib/cn";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/leads", label: "Leads" },
   { href: "/settings/ai", label: "AI Autopilot" },
+  { href: "/settings/autopilot", label: "AI Control" },
+  { href: "/settings/knowledge", label: "Knowledge base" },
+  { href: "/settings/email", label: "Email" },
   { href: "/settings", label: "Settings" },
+  { href: "/businesses", label: "Businesses" },
 ];
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
@@ -47,12 +52,24 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 export function AppShell({
   businessName,
   email,
+  activeBusinessId,
+  businesses,
   children,
 }: {
   businessName: string;
   email: string;
+  activeBusinessId: string;
+  businesses: BusinessSummary[];
   children: ReactNode;
 }) {
+  const menu = (
+    <UserMenu
+      businessName={businessName}
+      email={email}
+      activeBusinessId={activeBusinessId}
+      businesses={businesses}
+    />
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -68,14 +85,17 @@ export function AppShell({
           </div>
         </div>
         <div className="border-t border-slate-200 pt-4">
-          <UserMenu businessName={businessName} email={email} />
+          {menu}
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile header */}
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
-          <Logo href="/dashboard" />
+          <div className="flex min-w-0 items-center gap-3">
+            <Logo href="/dashboard" />
+            <span className="truncate text-sm font-medium text-slate-600">{businessName}</span>
+          </div>
           <Button
             variant="secondary"
             size="sm"
@@ -91,7 +111,7 @@ export function AppShell({
           <div id="mobile-nav" className="border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
             <NavLinks onNavigate={() => setMobileOpen(false)} />
             <div className="mt-3 border-t border-slate-200 pt-3">
-              <UserMenu businessName={businessName} email={email} />
+              {menu}
             </div>
           </div>
         ) : null}

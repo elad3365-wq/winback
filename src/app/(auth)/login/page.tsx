@@ -28,7 +28,11 @@ export default async function LoginPage({
   const target = safeNext(typeof next === "string" ? next : null) ?? undefined;
   const errorMessage = authErrorFromParam(typeof error === "string" ? error : undefined);
   const successMessage =
-    status === "password_updated" ? "Password updated. Sign in with your new password." : undefined;
+    status === "password_updated"
+      ? "Password updated. Sign in with your new password."
+      : status === "email_confirmed"
+        ? "Your email is confirmed. Sign in to continue."
+        : undefined;
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8">

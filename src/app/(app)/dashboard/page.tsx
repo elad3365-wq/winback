@@ -1,14 +1,15 @@
 import Link from "next/link";
 
+import { GettingStarted } from "@/components/dashboard/getting-started";
 import { LeadsChart } from "@/components/dashboard/leads-chart";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { requireBusinessContext } from "@/lib/business";
 import type { Lead } from "@/lib/database.types";
 import { formatDate, formatPhone } from "@/lib/format";
+import { gettingStartedSteps, showGettingStarted } from "@/lib/getting-started";
 import {
   buildDailySeries,
   dashboardMetrics,
@@ -45,10 +46,30 @@ export default async function DashboardPage() {
     .limit(2000);
 
   if (error) {
-    return <Alert tone="error">Could not load your dashboard: {error.message}</Alert>;
+    console.error("[dashboard] could not load leads", error.message);
+    return <Alert tone="error">Could not load your dashboard. Please refresh the page.</Alert>;
   }
 
   const allLeads = (leads ?? []) as Lead[];
+
+  // First-run checklist. Each count is best-effort: a missing table (an older
+  // database) just reads as "not done yet" instead of breaking the dashboard.
+  const [drafts, reviewed, gmail] = await Promise.all([
+    supabase.from("ai_messages").select("id", { count: "exact", head: true }).eq("business_id", business.id),
+    supabase
+      .from("ai_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", business.id)
+      .in("status", ["approved", "sent"]),
+    supabase.from("business_gmail_connections").select("business_id").eq("business_id", business.id).maybeSingle(),
+  ]);
+  const steps = gettingStartedSteps({
+    leadCount: allLeads.length,
+    aiDraftCount: drafts.count ?? 0,
+    reviewedDraftCount: reviewed.count ?? 0,
+    gmailConnected: Boolean(gmail.data),
+    firstLeadId: allLeads[0]?.id ?? null,
+  });
   const metrics = dashboardMetrics(allLeads);
   const series = buildDailySeries(allLeads.map((lead) => lead.created_at), 30);
 
@@ -72,41 +93,29 @@ export default async function DashboardPage() {
         </Link>
       </header>
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Total leads" value={metrics.total} href="/leads" />
-        <StatTile label="New" value={metrics.byStatus.new} tone="indigo" href="/leads?status=new" />
-        <StatTile label="Needs follow-up" value={metrics.needsFollowUp} tone="amber" href="/leads?due=overdue" />
-        <StatTile label={LEAD_STATUS_LABELS.interested} value={metrics.byStatus.interested} tone="indigo" href="/leads?status=interested" />
-        <StatTile label={LEAD_STATUS_LABELS.recovered} value={metrics.byStatus.recovered} tone="emerald" href="/leads?status=recovered" />
-        <StatTile label={LEAD_STATUS_LABELS.lost} value={metrics.byStatus.lost} href="/leads?status=lost" />
-      </section>
+      {showGettingStarted(steps) ? <GettingStarted steps={steps} /> : null}
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatTile label="Created this week" value={metrics.createdThisWeek} />
-        <StatTile label="Follow-ups due today" value={metrics.dueToday} tone={metrics.dueToday > 0 ? "amber" : "default"} />
-        <StatTile
-          label="Overdue follow-ups"
-          value={metrics.overdue}
-          tone={metrics.overdue > 0 ? "rose" : "default"}
-          href={metrics.overdue > 0 ? "/leads?due=overdue" : undefined}
-        />
-      </section>
-
-      {metrics.total === 0 ? (
-        <Card>
-          <div className="px-2 py-10 text-center">
-            <h2 className="text-base font-semibold text-slate-900">No leads yet</h2>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
-              Add the customers who received an estimate and went quiet. WinBack keeps every follow-up on
-              your radar and drafts the message for you.
-            </p>
-            <Link href="/leads" className="mt-5 inline-block">
-              <Button>Add your first lead</Button>
-            </Link>
-          </div>
-        </Card>
-      ) : (
+      {metrics.total === 0 ? null : (
         <>
+          <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            <StatTile label="Total leads" value={metrics.total} href="/leads" />
+            <StatTile label="New" value={metrics.byStatus.new} tone="indigo" href="/leads?status=new" />
+            <StatTile label="Needs follow-up" value={metrics.needsFollowUp} tone="amber" href="/leads?due=overdue" />
+            <StatTile label={LEAD_STATUS_LABELS.interested} value={metrics.byStatus.interested} tone="indigo" href="/leads?status=interested" />
+            <StatTile label={LEAD_STATUS_LABELS.recovered} value={metrics.byStatus.recovered} tone="emerald" href="/leads?status=recovered" />
+            <StatTile label={LEAD_STATUS_LABELS.lost} value={metrics.byStatus.lost} href="/leads?status=lost" />
+          </section>
+
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatTile label="Created this week" value={metrics.createdThisWeek} />
+            <StatTile label="Follow-ups due today" value={metrics.dueToday} tone={metrics.dueToday > 0 ? "amber" : "default"} />
+            <StatTile
+              label="Overdue follow-ups"
+              value={metrics.overdue}
+              tone={metrics.overdue > 0 ? "rose" : "default"}
+              href={metrics.overdue > 0 ? "/leads?due=overdue" : undefined}
+            />
+          </section>
           <section className="grid gap-6 lg:grid-cols-2">
             <LeadsChart points={series} />
 

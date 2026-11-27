@@ -3,12 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 
 import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/env";
 import type { Database } from "@/lib/database.types";
-
-const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/auth", "/privacy", "/terms"];
-
-function isPublicPath(pathname: string) {
-  return pathname === "/" || PUBLIC_PATHS.some((path) => pathname.startsWith(path));
-}
+import { isPublicPath, shouldForwardAuthCode } from "@/lib/supabase/paths";
 
 /**
  * Refreshes the Supabase session cookie on every request and keeps signed-out
@@ -26,11 +21,7 @@ export async function updateSession(request: NextRequest) {
   // (The proper fix is to allow-list /auth/callback in Supabase, which also
   // preserves the `next` param; this keeps sign-in working until then.)
   const incoming = request.nextUrl;
-  if (
-    incoming.searchParams.has("code") &&
-    incoming.pathname !== "/auth/callback" &&
-    !incoming.pathname.startsWith("/auth/")
-  ) {
+  if (shouldForwardAuthCode(incoming.pathname, incoming.searchParams.has("code"))) {
     const callbackUrl = incoming.clone();
     callbackUrl.pathname = "/auth/callback";
     return NextResponse.redirect(callbackUrl);

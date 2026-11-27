@@ -32,6 +32,21 @@ export type AutopilotMode = "manual" | "assisted" | "full";
 export type AiTone = "professional" | "friendly" | "direct" | "premium";
 export type UnsubscribeStatus = "subscribed" | "unsubscribed";
 
+/** Direction of a stored Gmail message for a business mailbox. */
+export type EmailDirection = "inbound" | "outbound";
+
+/** Lifecycle of an AI-drafted email reply (draft → approved → sent). */
+export type GmailReplyStatus = "draft" | "edited" | "approved" | "sent" | "cancelled";
+
+/** Per-business AI autonomy level (DB check constraint). */
+export type AutonomyLevelDb = "off" | "assist" | "draft" | "autopilot";
+
+/** Lifecycle of a queued AI task. */
+export type AiTaskStatus = "queued" | "running" | "done" | "failed" | "dead";
+
+/** Kind of verified business-memory entry. */
+export type BusinessKnowledgeKind = "faq" | "fact" | "policy" | "instruction";
+
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
@@ -380,6 +395,242 @@ export type Database = {
         };
         Relationships: [];
       };
+      business_gmail_connections: {
+        Row: {
+          business_id: string;
+          google_account_email: string;
+          access_token_encrypted: string;
+          refresh_token_encrypted: string | null;
+          access_token_expires_at: string | null;
+          scope: string | null;
+          history_id: string | null;
+          watch_expiration: string | null;
+          watch_topic: string | null;
+          watch_last_renewed_at: string | null;
+          last_synced_at: string | null;
+          connected_by: string | null;
+          revoked_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          business_id: string;
+          google_account_email: string;
+          access_token_encrypted: string;
+          refresh_token_encrypted?: string | null;
+          access_token_expires_at?: string | null;
+          scope?: string | null;
+          history_id?: string | null;
+          watch_expiration?: string | null;
+          watch_topic?: string | null;
+          watch_last_renewed_at?: string | null;
+          last_synced_at?: string | null;
+          connected_by?: string | null;
+          revoked_at?: string | null;
+        };
+        Update: {
+          google_account_email?: string;
+          access_token_encrypted?: string;
+          refresh_token_encrypted?: string | null;
+          access_token_expires_at?: string | null;
+          scope?: string | null;
+          history_id?: string | null;
+          watch_expiration?: string | null;
+          watch_topic?: string | null;
+          watch_last_renewed_at?: string | null;
+          last_synced_at?: string | null;
+          revoked_at?: string | null;
+        };
+        Relationships: [];
+      };
+      business_email_messages: {
+        Row: {
+          id: string;
+          business_id: string;
+          gmail_message_id: string;
+          gmail_thread_id: string | null;
+          lead_id: string | null;
+          direction: EmailDirection;
+          from_address: string | null;
+          to_addresses: string[] | null;
+          subject: string | null;
+          snippet: string | null;
+          body_text: string | null;
+          rfc822_message_id: string | null;
+          in_reply_to: string | null;
+          email_references: string | null;
+          internal_date: string | null;
+          label_ids: string[] | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          gmail_message_id: string;
+          gmail_thread_id?: string | null;
+          lead_id?: string | null;
+          direction?: EmailDirection;
+          from_address?: string | null;
+          to_addresses?: string[] | null;
+          subject?: string | null;
+          snippet?: string | null;
+          body_text?: string | null;
+          rfc822_message_id?: string | null;
+          in_reply_to?: string | null;
+          email_references?: string | null;
+          internal_date?: string | null;
+          label_ids?: string[] | null;
+        };
+        Update: {
+          lead_id?: string | null;
+          label_ids?: string[] | null;
+          snippet?: string | null;
+          body_text?: string | null;
+        };
+        Relationships: [];
+      };
+      business_email_replies: {
+        Row: {
+          id: string;
+          business_id: string;
+          message_id: string;
+          lead_id: string | null;
+          status: GmailReplyStatus;
+          body: string;
+          ai_model: string | null;
+          prompt_inputs: Json | null;
+          discount_offered: boolean;
+          approved_at: string | null;
+          approved_by: string | null;
+          sent_at: string | null;
+          gmail_sent_message_id: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          message_id: string;
+          lead_id?: string | null;
+          status?: GmailReplyStatus;
+          body: string;
+          ai_model?: string | null;
+          prompt_inputs?: Json | null;
+          discount_offered?: boolean;
+          created_by?: string | null;
+        };
+        Update: {
+          status?: GmailReplyStatus;
+          body?: string;
+          lead_id?: string | null;
+          approved_at?: string | null;
+          approved_by?: string | null;
+          sent_at?: string | null;
+          gmail_sent_message_id?: string | null;
+        };
+        Relationships: [];
+      };
+      business_ai_autonomy: {
+        Row: {
+          business_id: string;
+          level: AutonomyLevelDb;
+          emergency_stop: boolean;
+          daily_action_limit: number;
+          daily_spend_limit_usd: number;
+          autopilot_send_authorized: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          business_id: string;
+          level?: AutonomyLevelDb;
+          emergency_stop?: boolean;
+          daily_action_limit?: number;
+          daily_spend_limit_usd?: number;
+          autopilot_send_authorized?: boolean;
+        };
+        Update: {
+          level?: AutonomyLevelDb;
+          emergency_stop?: boolean;
+          daily_action_limit?: number;
+          daily_spend_limit_usd?: number;
+          autopilot_send_authorized?: boolean;
+        };
+        Relationships: [];
+      };
+      ai_tasks: {
+        Row: {
+          id: string;
+          business_id: string;
+          type: string;
+          status: AiTaskStatus;
+          priority: number;
+          run_after: string;
+          attempts: number;
+          max_attempts: number;
+          dedupe_key: string;
+          payload: Json | null;
+          last_error: string | null;
+          locked_at: string | null;
+          lead_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          type: string;
+          status?: AiTaskStatus;
+          priority?: number;
+          run_after?: string;
+          attempts?: number;
+          max_attempts?: number;
+          dedupe_key: string;
+          payload?: Json | null;
+          last_error?: string | null;
+          locked_at?: string | null;
+          lead_id?: string | null;
+        };
+        Update: {
+          status?: AiTaskStatus;
+          priority?: number;
+          run_after?: string;
+          attempts?: number;
+          last_error?: string | null;
+          locked_at?: string | null;
+        };
+        Relationships: [];
+      };
+      business_knowledge: {
+        Row: {
+          id: string;
+          business_id: string;
+          kind: BusinessKnowledgeKind;
+          title: string | null;
+          content: string;
+          approved: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          kind?: BusinessKnowledgeKind;
+          title?: string | null;
+          content: string;
+          approved?: boolean;
+          created_by?: string | null;
+        };
+        Update: {
+          kind?: BusinessKnowledgeKind;
+          title?: string | null;
+          content?: string;
+          approved?: boolean;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -390,6 +641,37 @@ export type Database = {
       is_business_owner: {
         Args: { p_business_id: string };
         Returns: boolean;
+      };
+      create_business: {
+        Args: {
+          p_name: string;
+          p_business_type?: string | null;
+          p_custom_business_type?: string | null;
+          p_phone?: string | null;
+          p_email?: string | null;
+          p_website?: string | null;
+          p_country?: string | null;
+          p_state?: string | null;
+          p_city?: string | null;
+          p_currency?: string | null;
+        };
+        Returns: string;
+      };
+      ai_reserve_call: {
+        Args: { p_business_id: string; p_source: string; p_model: string };
+        Returns: string;
+      };
+      ai_finish_call: {
+        Args: { p_id: string; p_input_tokens: number; p_output_tokens: number; p_ok: boolean };
+        Returns: undefined;
+      };
+      consume_rate_limit: {
+        Args: { p_bucket: string; p_limit: number; p_window_seconds: number };
+        Returns: boolean;
+      };
+      log_security_event: {
+        Args: { p_event: string; p_subject: string | null; p_ip_hash: string | null; p_detail?: Json | null };
+        Returns: undefined;
       };
     };
     Enums: {
@@ -407,3 +689,9 @@ export type AiMessage = Database["public"]["Tables"]["ai_messages"]["Row"];
 export type AiAuditLog = Database["public"]["Tables"]["ai_audit_log"]["Row"];
 export type LeadNote = Database["public"]["Tables"]["lead_notes"]["Row"];
 export type LeadActivity = Database["public"]["Tables"]["lead_activity"]["Row"];
+export type BusinessGmailConnection = Database["public"]["Tables"]["business_gmail_connections"]["Row"];
+export type BusinessEmailMessage = Database["public"]["Tables"]["business_email_messages"]["Row"];
+export type BusinessEmailReply = Database["public"]["Tables"]["business_email_replies"]["Row"];
+export type BusinessAiAutonomy = Database["public"]["Tables"]["business_ai_autonomy"]["Row"];
+export type AiTask = Database["public"]["Tables"]["ai_tasks"]["Row"];
+export type BusinessKnowledge = Database["public"]["Tables"]["business_knowledge"]["Row"];

@@ -51,7 +51,8 @@ export async function updateAutopilotSettingsAction(
   );
 
   if (error) {
-    return { status: "error", error: error.message };
+    console.error("[settings/autopilot] save failed", error.message);
+    return { status: "error", error: "Couldn't save these settings. Please refresh the page and try again." };
   }
 
   revalidatePath("/settings/ai");
