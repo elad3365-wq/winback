@@ -71,6 +71,9 @@ export async function signUpAction(
   });
 
   if (error) {
+    // No email in the log: the code and status are enough to tell an email-send
+    // limit (Confirm email on, built-in mailer) from a real refusal.
+    console.error("[auth/signup] refused", { code: error.code ?? null, status: error.status ?? null });
     return { error: friendlyAuthError(error, AUTH_MESSAGES.signUp) };
   }
   await logSecurityEvent("sign_up", { email, ip });
