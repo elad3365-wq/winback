@@ -50,11 +50,11 @@ export const NY_PLUMBING: BusinessSeed = {
 };
 
 /** Sign up a brand-new owner. Assumes Supabase email-confirmation is OFF. */
-export async function signUp(page: Page, email: string, fullName: string): Promise<void> {
+export async function signUp(page: Page, email: string, fullName: string, password = TEST_PASSWORD): Promise<void> {
   await page.goto("/signup");
   await page.getByLabel("Full name").fill(fullName);
   await page.locator("#email").fill(email);
-  await page.locator("#password").fill(TEST_PASSWORD);
+  await page.locator("#password").fill(password);
   await page.getByRole("button", { name: /create account/i }).click();
 
   // With confirmation off we land in the app (onboarding). If confirmation is
