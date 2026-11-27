@@ -53,8 +53,8 @@ export const NY_PLUMBING: BusinessSeed = {
 export async function signUp(page: Page, email: string, fullName: string): Promise<void> {
   await page.goto("/signup");
   await page.getByLabel("Full name").fill(fullName);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(TEST_PASSWORD);
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill(TEST_PASSWORD);
   await page.getByRole("button", { name: /create account/i }).click();
 
   // With confirmation off we land in the app (onboarding). If confirmation is

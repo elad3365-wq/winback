@@ -35,8 +35,8 @@ test("pilot journey: knowledge → lead → AI draft → approve → mark sent �
   console.log("DASHBOARD:", (await page.locator("main").innerText()).slice(0, 1200));
   await page.context().clearCookies({ name: /sb-/ });
   await page.goto("/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(TEST_PASSWORD);
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill(TEST_PASSWORD);
   await page.getByRole("button", { name: /^sign in$/i }).click();
   await page.waitForURL(/\/dashboard/);
   step("re-login ok");

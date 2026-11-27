@@ -22,6 +22,6 @@ test("a new owner can sign up and finish onboarding", async ({ page }) => {
 
 test("the login page renders (smoke)", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByLabel("Email")).toBeVisible();
+  await expect(page.locator("#email")).toBeVisible();
   await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
 });
