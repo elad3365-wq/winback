@@ -99,12 +99,61 @@ function Hero() {
             <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
             No credit card required. Personal onboarding from the founder.
           </p>
+
+          <a
+            href="#demo"
+            className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-500"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white" aria-hidden="true">
+              <svg viewBox="0 0 16 16" className="ml-0.5 h-3 w-3" fill="currentColor"><path d="M4 2.5v11l9-5.5z" /></svg>
+            </span>
+            Watch the 90-second demo
+          </a>
         </div>
 
         <div className="animate-fade-up lg:pl-6" style={{ animationDelay: "120ms" }}>
           <HeroVisual />
           <p className="mt-3 text-center text-xs text-slate-400">Example dashboard data — not real customer results.</p>
         </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------ demo video -- */
+
+/**
+ * The product walkthrough: real screen recordings of WinBack with a fictional
+ * business and fictional customers, an English voiceover and burned-in
+ * captions. Served from /public/demo (excluded from the auth proxy matcher so
+ * signed-out visitors can play it). preload="none" keeps the 5.7 MB file off
+ * the first page load until the visitor presses play.
+ */
+function DemoVideo() {
+  return (
+    <section id="demo" className="scroll-mt-20 pb-20 lg:pb-28">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6">
+        <SectionHead
+          eyebrow="See it in action"
+          title="WinBack in 90 seconds"
+          intro="Watch a quote that went quiet turn into a follow-up you review and send yourself."
+        />
+        <div className="mt-10 overflow-hidden rounded-2xl bg-slate-900 shadow-xl ring-1 ring-slate-900/10">
+          <video
+            className="aspect-video w-full"
+            controls
+            playsInline
+            preload="none"
+            poster="/demo/winback-demo-poster.jpg"
+            aria-label="WinBack product demo with voiceover and captions"
+          >
+            <source src="/demo/winback-demo.mp4" type="video/mp4" />
+            Your browser can&apos;t play this video.
+          </video>
+        </div>
+        <p className="mt-3 text-center text-xs text-slate-400">
+          Voiceover and captions included. The demo uses a fictional business and fictional customers.
+        </p>
       </div>
     </section>
   );
@@ -333,6 +382,7 @@ function SiteFooter() {
             <div>
               <p className="font-semibold text-slate-900">Product</p>
               <ul className="mt-3 space-y-2 text-slate-500">
+                <li><a href="#demo" className="transition-colors hover:text-slate-900">Demo Video</a></li>
                 <li><a href="#how-it-works" className="transition-colors hover:text-slate-900">How It Works</a></li>
                 <li><a href="#apply" className="transition-colors hover:text-slate-900">Founding Pilot</a></li>
                 <li><a href="#faq" className="transition-colors hover:text-slate-900">FAQ</a></li>
@@ -371,6 +421,7 @@ export function LandingPage({ isAuthed = false }: { isAuthed?: boolean }) {
       <SiteNav isAuthed={isAuthed} />
       <main>
         <Hero />
+        <DemoVideo />
         <HowItWorks />
         <Industries />
         <FoundingPilot />
