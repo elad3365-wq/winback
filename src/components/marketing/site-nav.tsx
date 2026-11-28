@@ -7,6 +7,7 @@ import { Logo } from "@/components/logo";
 import { cn } from "@/lib/cn";
 
 const LINKS = [
+  { href: "#demo", label: "Demo" },
   { href: "#how-it-works", label: "How It Works" },
   { href: "#industries", label: "Who It's For" },
   { href: "#apply", label: "Founding Pilot" },
